@@ -1,0 +1,13 @@
+{
+  "name": "@codeforge/cli",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "codeforge": "./src/index.js"
+  },
+  "scripts": {
+    "dev": "node src/index.js",
+    "start": "node src/index.js"
+  }
+}
