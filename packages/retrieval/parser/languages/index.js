@@ -1,0 +1,12 @@
+export { default as javascript } from "./javascript.js";
+export { default as typescript } from "./typescript.js";
+export { default as python } from "./python.js";
+export { default as java } from "./java.js";
+export { default as go } from "./go.js";
+export { default as rust } from "./rust.js";
+export { default as c } from "./c.js";
+export { default as cpp } from "./cpp.js";
+export { default as csharp } from "./csharp.js";
+export { default as php } from "./php.js";
+export { default as ruby } from "./ruby.js";
+export { default as swift } from "./swift.js";
