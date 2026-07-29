@@ -1,7 +1,7 @@
 import { createPrompt, logger } from "../../../packages/terminal/index.js";
 
 export function startCLI(app) {
-  const { config, project, git } = app;
+  const { config, project, git, provider } = app;
 
   logger.success(`Loaded project: ${project.name}`);
 

@@ -49,10 +49,31 @@ export function loadConfig() {
     fs.readFileSync(CONFIG_FILE, "utf8")
   );
 
-  return {
+  const finalConfig = {
     ...defaultConfig,
     ...config,
+
+    // Runtime values from environment
+    apiKey: process.env.OPENROUTER_API_KEY,
+
+    model:
+      process.env.OPENROUTER_MODEL ??
+      config.model ??
+      defaultConfig.model,
+
+    temperature: Number(
+      process.env.OPENROUTER_TEMPERATURE ??
+      config.temperature ??
+      defaultConfig.temperature
+    ),
+
+    maxTokens: Number(
+      process.env.OPENROUTER_MAX_TOKENS ??
+      config.maxTokens ??
+      defaultConfig.maxTokens
+    ),
   };
+  return finalConfig;
 }
 
 export function saveConfig(config) {

@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@openrouter/sdk':
+        specifier: ^1.1.14
+        version: 1.1.14
       chalk:
         specifier: ^6.0.0
         version: 6.0.0
@@ -39,6 +42,9 @@ packages:
 
   '@kwsites/promise-deferred@1.1.1':
     resolution: {integrity: sha512-GaHYm+c0O9MjZRu0ongGBRbinu8gVAMd2UZjji6jVmqKtZluZnptXGWhz1E8j8D2HJ3f/yMxKAUC0b+57wncIw==}
+
+  '@openrouter/sdk@1.1.14':
+    resolution: {integrity: sha512-aJEPm129G9CjluxfHfG48ycrBla5Iiqx3tFF98MEApc1SC89VkSnZW6hiCI/Gm5S5T+QCJnu9IGucVre1Nd4yw==}
 
   '@simple-git/args-pathspec@1.0.3':
     resolution: {integrity: sha512-ngJMaHlsWDTfjyq9F3VIQ8b7NXbBLq5j9i5bJ6XLYtD6qlDXT7fdKY2KscWWUF8t18xx052Y/PUO1K1TRc9yKA==}
@@ -173,6 +179,10 @@ snapshots:
       - supports-color
 
   '@kwsites/promise-deferred@1.1.1': {}
+
+  '@openrouter/sdk@1.1.14':
+    dependencies:
+      zod: 4.4.3
 
   '@simple-git/args-pathspec@1.0.3': {}
 

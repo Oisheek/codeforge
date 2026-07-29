@@ -1,7 +1,11 @@
 export const defaultConfig = {
   provider: "openrouter",
 
-  model: "openai/gpt-5",
+  model: "openai/gpt-oss-20b:free",
+
+  temperature: 0.2,
+
+  maxTokens: 4096,
 
   confirmEdits: true,
 
@@ -9,5 +13,5 @@ export const defaultConfig = {
 
   debug: false,
 
-  telemetry: false
+  telemetry: false,
 };

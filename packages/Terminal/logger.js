@@ -13,7 +13,7 @@ export const logger = {
     print("✔", colors.success, message);
   },
 
-  warning(message) {
+  warn(message) {
     print("⚠", colors.warning, message);
   },
 

@@ -9,6 +9,7 @@
     "start": "pnpm --filter @codeforge/cli start"
   },
   "dependencies": {
+    "@openrouter/sdk": "^1.1.14",
     "chalk": "^6.0.0",
     "commander": "^15.0.0",
     "dotenv": "^17.4.2",
