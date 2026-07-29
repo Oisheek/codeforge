@@ -2,8 +2,12 @@ import dotenv from "dotenv";
 
 import {
   scanProject,
-  findWorkspaceRoot
+  findWorkspaceRoot,
 } from "../../../packages/scanner/index.js";
+
+import {
+  inspectGit,
+} from "../../../packages/git/index.js";
 
 import {
   showBanner,
@@ -25,15 +29,18 @@ export async function bootstrap() {
 
     const root = await findWorkspaceRoot(process.cwd());
 
-const project = await scanProject(root);
+    const project = await scanProject(root);
 
     logger.success(`Project: ${project.name}`);
+
+    const git = await inspectGit(root);
 
     logger.success("CodeForge initialized.");
 
     startCLI({
       config,
       project,
+      git,
     });
 
   } catch (error) {

@@ -1,9 +1,19 @@
 import { createPrompt, logger } from "../../../packages/terminal/index.js";
 
 export function startCLI(app) {
-  const { config, project } = app;
+  const { config, project, git } = app;
 
   logger.success(`Loaded project: ${project.name}`);
+
+  if (git?.isRepository) {
+    logger.info(`Git Branch: ${git.branch.current}`);
+
+    if (git.status.clean) {
+      logger.success("Working tree clean.");
+    } else {
+      logger.warn("Working tree has uncommitted changes.");
+    }
+  }
 
   const prompt = createPrompt();
 
