@@ -62,7 +62,6 @@ export async function bootstrap() {
 
     logger.info("Building repository index...");
 
-    // Temporary: this will still fail until we fix the parser input.
     const repository = await buildRepository(root);
 
     logger.success("Repository indexed.");
@@ -74,8 +73,6 @@ export async function bootstrap() {
     logger.success("OpenRouter provider initialized.");
 
     const systemPrompt = createSystemPrompt();
-
-    console.log("execute:", typeof execute);
 
     logger.success("CodeForge initialized.");
 

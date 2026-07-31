@@ -27,7 +27,7 @@ export function createOpenRouter(config) {
       ...options,
     };
 
-    // Future-proof reasoning support
+    // Future-proof reasoning support.
     if (thinking?.enabled) {
       request.reasoning = {
         effort: thinking.mode ?? "medium",
@@ -42,17 +42,41 @@ export function createOpenRouter(config) {
       id: response.id,
       model: response.model,
       usage: response.usage,
-      finishReason: response.choices?.[0]?.finish_reason,
+
+      // OpenRouter SDK currently uses camelCase.
+      // Keep snake_case fallback for compatibility.
+      finishReason:
+        response.choices?.[0]?.finishReason ??
+        response.choices?.[0]?.finish_reason,
+
       message: response.choices?.[0]?.message,
       raw: response,
     };
   }
 
   function normalizeError(error) {
+    const message =
+      error?.message ??
+      error?.error?.message ??
+      error?.body?.error?.message ??
+      error?.response?.data?.error?.message ??
+      "OpenRouter request failed.";
+
+    const code =
+      error?.code ??
+      error?.error?.code ??
+      error?.body?.error?.code ??
+      "provider_error";
+
+    const status =
+      error?.status ??
+      error?.statusCode ??
+      error?.response?.status;
+
     return {
-      code: error?.code ?? "provider_error",
-      status: error?.status,
-      message: error?.message ?? "OpenRouter request failed.",
+      code,
+      status,
+      message,
       cause: error,
     };
   }
@@ -86,7 +110,7 @@ export function createOpenRouter(config) {
     }
   }
 
-  // Backward compatibility
+  // Backward compatibility.
   async function chat(options) {
     const response = await generate(options);
     return response.message;

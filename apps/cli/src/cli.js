@@ -1,15 +1,19 @@
-import { createPrompt, logger } from "../../../packages/terminal/index.js";
-console.log(typeof execute);
+import {
+  createPrompt,
+  logger,
+  createAgentDashboard,
+} from "../../../packages/terminal/index.js";
+
 export function startCLI(app) {
   const {
-  config,
-  project,
-  git,
-  provider,
-  repository,
-  systemPrompt,
-  execute,
-} = app;
+    config,
+    project,
+    git,
+    provider,
+    repository,
+    systemPrompt,
+    execute,
+  } = app;
 
   logger.success(`Loaded project: ${project.name}`);
 
@@ -23,13 +27,18 @@ export function startCLI(app) {
     }
   }
 
+  const dashboard = createAgentDashboard({
+  enabled: config.agentDashboard,
+  projectRoot: project.root,
+});
+
   const prompt = createPrompt();
 
   prompt.prompt();
 
   prompt.on("line", async (input) => {
     const command = input.trim();
-    
+
     if (!command) {
       prompt.prompt();
       return;
@@ -42,33 +51,37 @@ export function startCLI(app) {
     }
 
     try {
-  const result = await execute({
-    prompt: command,
-    repository,
-    provider,
-    providers: [
-      {
-        name: "openrouter",
-        defaultModel: config.defaultModel,
-      },
-    ],
-    config,
-    project,
-    git,
-    memory: {},
-    systemPrompt,
-  });
+      const result = await execute({
+        prompt: command,
+        repository,
+        provider,
+        providers: [
+          {
+            name: "openrouter",
+            defaultModel: config.model,
+          },
+        ],
+        config,
+        project,
+        git,
+        memory: {},
+        systemPrompt,
+        onEvent: dashboard.handle,
+      });
 
-  logger.plain("");
-  logger.plain(
-  result.response.message?.content ?? "No response."
-);
-  logger.plain("");
-} catch (error) {
-  logger.error(error.message);
-}
+      dashboard.finish();
 
-prompt.prompt();
+      logger.plain("");
+      logger.plain(
+        result.response.message?.content ?? "No response."
+      );
+      logger.plain("");
+    } catch (error) {
+      dashboard.finish();
+      logger.error(error.message);
+    }
+
+    prompt.prompt();
   });
 
   prompt.on("close", () => {

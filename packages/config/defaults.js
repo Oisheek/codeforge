@@ -7,6 +7,8 @@ export const defaultConfig = {
 
   maxTokens: 4096,
 
+  maxAttempts: 3,
+
   confirmEdits: true,
 
   theme: "default",
@@ -14,4 +16,6 @@ export const defaultConfig = {
   debug: false,
 
   telemetry: false,
+
+  agentDashboard: true,
 };
