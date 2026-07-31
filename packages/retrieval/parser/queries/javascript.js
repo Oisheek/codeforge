@@ -50,7 +50,7 @@ export const SYMBOLS = `
 
 (variable_declarator
   name: (identifier) @symbol.function
-  value: (function))
+  value: (function_expression))
 
 ;; ------------------------------------------------------------
 ;; Variables
@@ -61,7 +61,7 @@ export const SYMBOLS = `
 `;
 
 export const IMPORTS = `
-;; ES Module
+;; ES modules
 
 (import_statement) @import
 
@@ -71,38 +71,28 @@ export const IMPORTS = `
   function: (identifier) @_require
   (#eq? @_require "require"))
 @import
-
-;; dynamic import()
-
-(import_expression) @import
 `;
 
 export const EXPORTS = `
-;; export ...
+;; ES module exports
 
 (export_statement) @export
 
-;; export default ...
-
-(export_default_declaration) @export
-
-;; module.exports = ...
+;; CommonJS: module.exports = ...
 
 (assignment_expression
-  left:
-    (member_expression
-      object: (identifier) @_module
-      property: (property_identifier) @_exports)
+  left: (member_expression
+    object: (identifier) @_module
+    property: (property_identifier) @_exports)
   (#eq? @_module "module")
   (#eq? @_exports "exports"))
 @export
 
-;; exports.foo = ...
+;; CommonJS: exports.foo = ...
 
 (assignment_expression
-  left:
-    (member_expression
-      object: (identifier) @_exports)
+  left: (member_expression
+    object: (identifier) @_exports)
   (#eq? @_exports "exports"))
 @export
 `;

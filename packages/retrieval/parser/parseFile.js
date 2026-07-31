@@ -28,11 +28,14 @@ export async function parseFile(filePath) {
         });
     }
 
+
     const parser = getParser(language);
+
 
     const tree = parser.parse(source);
 
     const queries = getQueries(language);
+
 
     const result = traverse({
         tree,
@@ -41,6 +44,7 @@ export async function parseFile(filePath) {
         language,
         queries,
     });
+ 
 
     return createParsedFile({
         path: filePath,

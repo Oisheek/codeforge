@@ -13,6 +13,18 @@ import {
 } from "../../../packages/git/index.js";
 
 import {
+  buildRepository,
+} from "../../../packages/retrieval/index.js";
+
+import {
+  createSystemPrompt,
+} from "../../../packages/prompts/index.js";
+
+import {
+  execute,
+} from "../../../packages/agent/index.js";
+
+import {
   createOpenRouter,
 } from "../../../packages/providers/index.js";
 
@@ -30,7 +42,6 @@ import { startCLI } from "./cli.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// apps/cli/src -> ../../../.env (workspace root)
 dotenv.config({
   path: path.resolve(__dirname, "../../../.env"),
 });
@@ -49,11 +60,22 @@ export async function bootstrap() {
 
     logger.success(`Project: ${project.name}`);
 
+    logger.info("Building repository index...");
+
+    // Temporary: this will still fail until we fix the parser input.
+    const repository = await buildRepository(root);
+
+    logger.success("Repository indexed.");
+
     const git = await inspectGit(root);
 
     const provider = createOpenRouter(config);
 
     logger.success("OpenRouter provider initialized.");
+
+    const systemPrompt = createSystemPrompt();
+
+    console.log("execute:", typeof execute);
 
     logger.success("CodeForge initialized.");
 
@@ -62,6 +84,9 @@ export async function bootstrap() {
       project,
       git,
       provider,
+      repository,
+      systemPrompt,
+      execute,
     });
 
   } catch (error) {

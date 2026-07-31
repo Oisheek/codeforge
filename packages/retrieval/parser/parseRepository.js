@@ -18,46 +18,49 @@ export async function parseRepository(
     const files = [];
 
     for (const file of repositoryIndex) {
-        try {
-            // Cache hit
-            if (
-                cache &&
-                cache.has(file.path, file.hash)
-            ) {
-                const cached = cache.get(file.path);
+    const filePath =
+        typeof file === "string"
+            ? file
+            : file.path;
 
-                if (cached?.parsed) {
-                    files.push(cached.parsed);
-                    continue;
+    const fileHash =
+        typeof file === "string"
+            ? null
+            : file.hash;
+
+    try {
+        // Cache hit
+        if (
+            cache &&
+            fileHash &&
+            cache.has(filePath, fileHash)
+        ) {
+            const cached = cache.get(filePath);
+
+            if (cached?.parsed) {
+                files.push(cached.parsed);
+                continue;
+            }
+        }
+
+        const parsed = await parseFile(filePath);
+
+        if (cache && fileHash) {
+            cache.set(
+                filePath,
+                fileHash,
+                {
+                    parsed,
                 }
-            }
-
-            // Reserved for future incremental parsing
-            const previousTree = null;
-
-            const parsed = await parseFile(
-                file,
-                previousTree
-            );
-
-            if (cache) {
-                cache.set(
-                    file.path,
-                    file.hash,
-                    {
-                        parsed,
-                    }
-                );
-            }
-
-            files.push(parsed);
-        } catch (error) {
-            console.warn(
-                `Failed to parse ${file.path}:`,
-                error.message
             );
         }
+
+        files.push(parsed);
+    } catch (error) {
+       console.error(`Failed to parse ${filePath}`);
+console.error(error.stack);
     }
+}
 
     if (cache) {
         await cache.save();

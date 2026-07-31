@@ -1,7 +1,15 @@
 import { createPrompt, logger } from "../../../packages/terminal/index.js";
-
+console.log(typeof execute);
 export function startCLI(app) {
-  const { config, project, git, provider } = app;
+  const {
+  config,
+  project,
+  git,
+  provider,
+  repository,
+  systemPrompt,
+  execute,
+} = app;
 
   logger.success(`Loaded project: ${project.name}`);
 
@@ -19,9 +27,9 @@ export function startCLI(app) {
 
   prompt.prompt();
 
-  prompt.on("line", (input) => {
+  prompt.on("line", async (input) => {
     const command = input.trim();
-
+    
     if (!command) {
       prompt.prompt();
       return;
@@ -33,9 +41,34 @@ export function startCLI(app) {
       return;
     }
 
-    logger.plain(`You typed: ${command}`);
+    try {
+  const result = await execute({
+    prompt: command,
+    repository,
+    provider,
+    providers: [
+      {
+        name: "openrouter",
+        defaultModel: config.defaultModel,
+      },
+    ],
+    config,
+    project,
+    git,
+    memory: {},
+    systemPrompt,
+  });
 
-    prompt.prompt();
+  logger.plain("");
+  logger.plain(
+  result.response.message?.content ?? "No response."
+);
+  logger.plain("");
+} catch (error) {
+  logger.error(error.message);
+}
+
+prompt.prompt();
   });
 
   prompt.on("close", () => {

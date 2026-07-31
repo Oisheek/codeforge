@@ -1,86 +1,84 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-
+/**
+ * packages/retrieval/cache.js
+ *
+ * Simple in-memory cache for retrieval artifacts.
+ */
 
 export class RetrievalCache {
-    constructor(cachePath = ".codeforge/cache/retrieval.json") {
-        this.cachePath = cachePath;
-        this.entries = new Map();
-        this.loaded = false;
-    }
-
-    async load() {
-        if (this.loaded) {
-            return;
-        }
-
-        try {
-            const data = await fs.readFile(this.cachePath, "utf8");
-            const json = JSON.parse(data);
-
-            this.entries = new Map(Object.entries(json));
-        } catch {
-            this.entries = new Map();
-        }
-
-        this.loaded = true;
-    }
-
-    async save() {
-        await fs.mkdir(path.dirname(this.cachePath), {
-            recursive: true,
-        });
-
-        const json = Object.fromEntries(this.entries);
-
-        await fs.writeFile(
-            this.cachePath,
-            JSON.stringify(json, null, 2),
-            "utf8"
-        );
-    }
-
-    has(filePath, hash) {
-        const entry = this.entries.get(filePath);
-
-        return !!entry && entry.hash === hash;
-    }
-
-    get(filePath) {
-        return this.entries.get(filePath) ?? null;
-    }
-
-    set(filePath, hash, data) {
-        this.entries.set(filePath, {
-            hash,
-            timestamp: Date.now(),
-            ...data,
-        });
-    }
-
-    delete(filePath) {
-        this.entries.delete(filePath);
+    constructor() {
+        this.clear();
     }
 
     clear() {
-        this.entries.clear();
+        this.cache = new Map();
     }
 
+    /**
+     * Check if a key exists.
+     */
+    has(key) {
+        return this.cache.has(key);
+    }
+
+    /**
+     * Retrieve a cached value.
+     */
+    get(key) {
+        const entry = this.cache.get(key);
+
+        if (!entry) {
+            return null;
+        }
+
+        return entry.value;
+    }
+
+    /**
+     * Store a value.
+     */
+    set(key, value) {
+        this.cache.set(key, {
+            value,
+            createdAt: Date.now(),
+        });
+
+        return value;
+    }
+
+    /**
+     * Remove one cache entry.
+     */
+    delete(key) {
+        return this.cache.delete(key);
+    }
+
+    /**
+     * Number of cached entries.
+     */
     size() {
-        return this.entries.size;
+        return this.cache.size;
     }
 
+    /**
+     * List all cache keys.
+     */
     keys() {
-        return [...this.entries.keys()];
+        return [...this.cache.keys()];
     }
 
-    values() {
-        return [...this.entries.values()];
-    }
-
-    entriesArray() {
-        return [...this.entries.entries()];
+    /**
+     * Cache statistics.
+     */
+    stats() {
+        return {
+            entries: this.cache.size,
+        };
     }
 }
 
-export const cache = new RetrievalCache();
+/**
+ * Factory.
+ */
+export function createRetrievalCache() {
+    return new RetrievalCache();
+}

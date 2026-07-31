@@ -1,69 +1,92 @@
 /**
- * Estimate the size of a text in tokens.
- * Approximation: 1 token ≈ 4 characters.
+ * packages/retrieval/budget.js
+ *
+ * Context budget manager.
  */
-export function estimateTokens(text = "") {
-    return Math.ceil(text.length / 4);
-}
 
-/**
- * Compute the token cost of a retrieval result.
- */
-export function estimateResultTokens(result) {
-    return estimateTokens(result.content ?? "");
-}
+export class ContextBudget {
+    constructor(limit = 16000) {
+        this.limit = limit;
+    }
 
-/**
- * Select results that fit within a token budget.
- */
-export function allocateBudget(
-    results,
-    maxTokens = 12000
-) {
-    const selected = [];
-    let usedTokens = 0;
+    /**
+     * Estimate token count.
+     *
+     * Default heuristic:
+     * 1 token ≈ 4 characters.
+     */
+    estimate(text = "") {
+        return Math.ceil(text.length / 4);
+    }
 
-    for (const result of results) {
-        const cost = estimateResultTokens(result);
+    /**
+     * Select as many items as fit within the budget.
+     */
+    select(items) {
+        let used = 0;
 
-        if (usedTokens + cost > maxTokens) {
-            continue;
+        const selected = [];
+
+        for (const item of items) {
+            const text =
+                item.text ??
+                item.metadata?.text ??
+                "";
+
+            const cost = this.estimate(text);
+
+            if (used + cost > this.limit) {
+                break;
+            }
+
+            used += cost;
+            selected.push(item);
         }
 
-        selected.push({
-            ...result,
-            estimatedTokens: cost,
-        });
-
-        usedTokens += cost;
+        return {
+            items: selected,
+            used,
+            remaining: this.limit - used,
+            limit: this.limit,
+            utilization:
+                this.limit === 0
+                    ? 0
+                    : used / this.limit,
+        };
     }
 
-    return {
-        results: selected,
-        usedTokens,
-        remainingTokens: Math.max(
-            0,
-            maxTokens - usedTokens
-        ),
-        budget: maxTokens,
-    };
+    /**
+     * Check whether a single item fits.
+     */
+    fits(item) {
+        const text =
+            item.text ??
+            item.metadata?.text ??
+            "";
+
+        return this.estimate(text) <= this.limit;
+    }
+
+    /**
+     * Remaining budget after using some tokens.
+     */
+    remaining(used) {
+        return Math.max(0, this.limit - used);
+    }
+
+    /**
+     * Budget statistics.
+     */
+    stats() {
+        return {
+            limit: this.limit,
+        };
+    }
 }
 
 /**
- * Truncate oversized content to fit a token limit.
+ * Factory.
  */
-export function truncateToBudget(
-    text,
-    maxTokens
-) {
-    const maxChars = maxTokens * 4;
-
-    if (text.length <= maxChars) {
-        return text;
-    }
-
-    return (
-        text.slice(0, maxChars) +
-        "\n\n/* ... truncated ... */"
-    );
+export function createContextBudget(limit) {
+    return new ContextBudget(limit);
 }

@@ -1,78 +1,145 @@
-import { graph } from "./graph.js";
-
 /**
- * Find all definitions of a symbol.
+ * packages/retrieval/symbols.js
+ *
+ * Repository-wide symbol index.
  */
-export function findSymbol(name) {
-    return graph.findSymbol(name);
-}
 
-/**
- * Check whether a symbol exists.
- */
-export function hasSymbol(name) {
-    return graph.findSymbol(name).length > 0;
-}
+export class SymbolIndex {
+    constructor() {
+        this.clear();
+    }
 
-/**
- * Return every symbol in the repository.
- */
-export function getAllSymbols() {
-    const symbols = [];
+    clear() {
+        this.byId = new Map();
+        this.byName = new Map();
+        this.byFile = new Map();
+        this.byKind = new Map();
+    }
 
-    for (const file of graph.getFiles()) {
-        for (const symbol of file.symbols ?? []) {
-            symbols.push({
-                file: file.path,
-                ...symbol,
-            });
+    /**
+     * Add a single symbol.
+     */
+    add(symbol) {
+        if (!symbol) {
+            return;
+        }
+
+        // ------------------------------------------------------------------
+        // ID
+        // ------------------------------------------------------------------
+
+        this.byId.set(symbol.id, symbol);
+
+        // ------------------------------------------------------------------
+        // Name
+        // ------------------------------------------------------------------
+
+        if (!this.byName.has(symbol.name)) {
+            this.byName.set(symbol.name, []);
+        }
+
+        this.byName.get(symbol.name).push(symbol);
+
+        // ------------------------------------------------------------------
+        // File
+        // ------------------------------------------------------------------
+
+        if (!this.byFile.has(symbol.file)) {
+            this.byFile.set(symbol.file, []);
+        }
+
+        this.byFile.get(symbol.file).push(symbol);
+
+        // ------------------------------------------------------------------
+        // Kind
+        // ------------------------------------------------------------------
+
+        if (!this.byKind.has(symbol.kind)) {
+            this.byKind.set(symbol.kind, []);
+        }
+
+        this.byKind.get(symbol.kind).push(symbol);
+    }
+
+    /**
+     * Index one parsed file.
+     */
+    addFile(parsedFile) {
+        if (!parsedFile?.symbols) {
+            return;
+        }
+
+        for (const symbol of parsedFile.symbols) {
+            this.add(symbol);
         }
     }
 
-    return symbols;
-}
+    /**
+     * Build the complete repository index.
+     */
+    build(repository) {
+        this.clear();
 
-/**
- * Group symbols by kind.
- */
-export function getSymbolsByKind(kind) {
-    return getAllSymbols().filter(
-        (symbol) => symbol.kind === kind
-    );
-}
+        const files = repository.files ?? repository;
 
-/**
- * Build a symbol index.
- */
-export function getSymbolIndex() {
-    const index = new Map();
-
-    for (const symbol of getAllSymbols()) {
-        if (!index.has(symbol.name)) {
-            index.set(symbol.name, []);
+        for (const file of files) {
+            this.addFile(file);
         }
 
-        index.get(symbol.name).push(symbol);
+        return this;
     }
 
-    return index;
+    /**
+     * Lookup by ID.
+     */
+    get(id) {
+        return this.byId.get(id) ?? null;
+    }
+
+    /**
+     * Find symbols by name.
+     */
+    find(name) {
+        return this.byName.get(name) ?? [];
+    }
+
+    /**
+     * Get symbols in a file.
+     */
+    file(path) {
+        return this.byFile.get(path) ?? [];
+    }
+
+    /**
+     * Get symbols by kind.
+     */
+    kind(kind) {
+        return this.byKind.get(kind) ?? [];
+    }
+
+    /**
+     * All indexed symbols.
+     */
+    values() {
+        return [...this.byId.values()];
+    }
+
+    /**
+     * Repository statistics.
+     */
+    stats() {
+        return {
+            total: this.byId.size,
+            names: this.byName.size,
+            files: this.byFile.size,
+            kinds: this.byKind.size,
+        };
+    }
 }
 
 /**
- * Return repository symbol statistics.
+ * Convenience helper.
  */
-export function getSymbolStats() {
-    const stats = {
-        total: 0,
-        byKind: {},
-    };
-
-    for (const symbol of getAllSymbols()) {
-        stats.total++;
-
-        stats.byKind[symbol.kind] ??= 0;
-        stats.byKind[symbol.kind]++;
-    }
-
-    return stats;
+export function buildSymbolIndex(repository) {
+    return new SymbolIndex().build(repository);
 }

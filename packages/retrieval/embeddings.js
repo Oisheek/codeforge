@@ -1,5 +1,11 @@
 /**
- * Embedding provider interface.
+ * packages/retrieval/embeddings.js
+ *
+ * Embedding provider abstraction and vector store.
+ */
+
+/**
+ * Base embedding provider.
  */
 export class EmbeddingProvider {
     async embed(_text) {
@@ -8,9 +14,24 @@ export class EmbeddingProvider {
 
     async embedBatch(texts) {
         return Promise.all(
-            texts.map((text) => this.embed(text))
+            texts.map(text => this.embed(text))
         );
     }
+}
+
+/**
+ * Normalize a vector.
+ */
+export function normalizeVector(vector) {
+    const magnitude = Math.sqrt(
+        vector.reduce((sum, value) => sum + value * value, 0)
+    );
+
+    if (magnitude === 0) {
+        return [...vector];
+    }
+
+    return vector.map(value => value / magnitude);
 }
 
 /**
@@ -18,11 +39,29 @@ export class EmbeddingProvider {
  */
 export class EmbeddingStore {
     constructor() {
+        this.clear();
+    }
+
+    clear() {
         this.vectors = new Map();
     }
 
-    set(key, embedding) {
-        this.vectors.set(key, embedding);
+    set(key, embedding, metadata = {}) {
+        this.vectors.set(key, {
+            embedding: normalizeVector(embedding),
+            metadata,
+            createdAt: Date.now(),
+        });
+    }
+
+    setMany(entries) {
+        for (const entry of entries) {
+            this.set(
+                entry.key,
+                entry.embedding,
+                entry.metadata
+            );
+        }
     }
 
     get(key) {
@@ -33,17 +72,27 @@ export class EmbeddingStore {
         return this.vectors.has(key);
     }
 
-    clear() {
-        this.vectors.clear();
+    delete(key) {
+        return this.vectors.delete(key);
     }
 
     entries() {
         return [...this.vectors.entries()];
     }
+
+    size() {
+        return this.vectors.size;
+    }
+
+    stats() {
+        return {
+            vectors: this.vectors.size,
+        };
+    }
 }
 
 /**
- * Cosine similarity between two vectors.
+ * Cosine similarity.
  */
 export function cosineSimilarity(a, b) {
     if (
@@ -56,6 +105,7 @@ export function cosineSimilarity(a, b) {
     }
 
     let dot = 0;
+
     let magA = 0;
     let magB = 0;
 
@@ -73,16 +123,25 @@ export function cosineSimilarity(a, b) {
 }
 
 /**
- * Rank stored embeddings by similarity.
+ * Search embeddings.
  */
 export function searchEmbeddings(queryVector, store) {
+    const query = normalizeVector(queryVector);
+
     return store
         .entries()
-        .map(([key, vector]) => ({
+        .map(([key, value]) => ({
             key,
-            score: cosineSimilarity(queryVector, vector),
+            score: cosineSimilarity(
+                query,
+                value.embedding
+            ),
+            metadata: value.metadata,
         }))
         .sort((a, b) => b.score - a.score);
 }
 
+/**
+ * Default singleton store.
+ */
 export const embeddingStore = new EmbeddingStore();

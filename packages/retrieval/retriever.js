@@ -1,81 +1,125 @@
-import { parseRepository } from "./parser/index.js";
-import { graph } from "./graph.js";
-import { rankResults } from "./ranker.js";
-import { allocateBudget } from "./budget.js";
-import {
-    embeddingStore,
-    searchEmbeddings,
-} from "./embedding.js";
-
 /**
- * Build the repository graph.
+ * packages/retrieval/retriever.js
+ *
+ * Repository retrieval facade.
  */
-export async function indexRepository(
-    repositoryIndex,
-    cache = null
-) {
-    graph.clear();
 
-    const parsedFiles = await parseRepository(
-        repositoryIndex,
-        cache
-    );
-
-    for (const file of parsedFiles) {
-        graph.addFile(file);
+export class Retriever {
+    constructor({
+        repository,
+        symbols,
+        imports,
+        graph,
+    }) {
+        this.repository = repository;
+        this.symbols = symbols;
+        this.imports = imports;
+        this.graph = graph;
     }
 
-    return graph;
+    /**
+     * Repository object.
+     */
+    getRepository() {
+        return this.repository;
+    }
+
+    /**
+     * Find symbols by exact name.
+     */
+    findSymbol(name) {
+        return this.symbols.find(name);
+    }
+
+    /**
+     * Find symbols by kind.
+     */
+    findSymbolsByKind(kind) {
+        return this.symbols.kind(kind);
+    }
+
+    /**
+     * All indexed symbols.
+     */
+    getAllSymbols() {
+        return this.symbols.values();
+    }
+
+    /**
+     * Symbols in a file.
+     */
+    getFileSymbols(path) {
+        return this.symbols.file(path);
+    }
+
+    /**
+     * Imports of a file.
+     */
+    getFileImports(path) {
+        return this.imports.file(path);
+    }
+
+    /**
+     * Files importing a module.
+     */
+    getImporters(module) {
+        return this.imports.source(module);
+    }
+
+    /**
+     * Dependency graph.
+     */
+    getDependencies(path) {
+        return this.graph.getDependencies(path);
+    }
+
+    /**
+     * Reverse dependency graph.
+     */
+    getDependents(module) {
+        return this.graph.getDependents(module);
+    }
+
+    /**
+     * Parsed file.
+     */
+    getFile(path) {
+        return this.graph.getFile(path);
+    }
+
+    /**
+     * Check if a file exists.
+     */
+    hasFile(path) {
+        return this.graph.hasFile(path);
+    }
+
+    /**
+     * Basic lexical search.
+     *
+     * This will later become the unified entry point
+     * for lexical + graph + semantic retrieval.
+     */
+    search(query) {
+        return this.findSymbol(query);
+    }
+
+    /**
+     * Repository statistics.
+     */
+    stats() {
+        return {
+            files: this.graph.fileCount(),
+            symbols: this.symbols.stats().total,
+            imports: this.imports.stats().modules,
+            graph: this.graph.stats(),
+        };
+    }
 }
 
 /**
- * Retrieve relevant repository context.
+ * Factory.
  */
-export async function retrieve(
-    query,
-    {
-        maxTokens = 12000,
-        embedding = null,
-    } = {}
-) {
-    let candidates = graph.getFiles().map((file) => ({
-        path: file.path,
-        content: file.source,
-        symbols: file.symbols,
-        imports: file.imports,
-        exports: file.exports,
-    }));
-
-    // Structural ranking
-    candidates = rankResults(query, candidates);
-
-    // Optional semantic ranking
-    if (embedding) {
-        const semantic = searchEmbeddings(
-            embedding,
-            embeddingStore
-        );
-
-        const scores = new Map(
-            semantic.map((item) => [
-                item.key,
-                item.score,
-            ])
-        );
-
-        candidates = candidates
-            .map((candidate) => ({
-                ...candidate,
-                score:
-                    (candidate.score ?? 0) +
-                    (scores.get(candidate.path) ?? 0),
-            }))
-            .sort((a, b) => b.score - a.score);
-    }
-
-    // Token budget allocation
-    return allocateBudget(
-        candidates,
-        maxTokens
-    );
+export function createRetriever(indexes) {
+    return new Retriever(indexes);
 }

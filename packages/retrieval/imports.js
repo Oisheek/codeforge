@@ -1,55 +1,74 @@
-import { graph } from "./graph.js";
-
 /**
- * Find all files importing a module.
+ * packages/retrieval/imports.js
+ *
+ * Repository-wide import index.
  */
-export function findImporters(module) {
-    return graph.getDependents(module);
-}
 
-/**
- * Get all imports for a file.
- */
-export function getImports(filePath) {
-    return graph.getDependencies(filePath);
-}
-
-/**
- * Check whether a file imports a module.
- */
-export function importsModule(filePath, module) {
-    return graph
-        .getDependencies(filePath)
-        .includes(module);
-}
-
-/**
- * Build a repository-wide import index.
- */
-export function getImportIndex() {
-    const index = new Map();
-
-    for (const file of graph.getFiles()) {
-        index.set(
-            file.path,
-            graph.getDependencies(file.path)
-        );
+export class ImportIndex {
+    constructor() {
+        this.clear();
     }
 
-    return index;
-}
+    clear() {
+        this.byFile = new Map();
+        this.bySource = new Map();
+    }
 
-/**
- * Return all unique imported modules.
- */
-export function getImportedModules() {
-    const modules = new Set();
+    add(file, imp) {
+        if (!this.byFile.has(file)) {
+            this.byFile.set(file, []);
+        }
 
-    for (const file of graph.getFiles()) {
-        for (const dep of graph.getDependencies(file.path)) {
-            modules.add(dep);
+        this.byFile.get(file).push(imp);
+
+        if (!this.bySource.has(imp.source)) {
+            this.bySource.set(imp.source, []);
+        }
+
+        this.bySource.get(imp.source).push({
+            file,
+            import: imp,
+        });
+    }
+
+    addFile(parsedFile) {
+        if (!parsedFile?.imports) {
+            return;
+        }
+
+        for (const imp of parsedFile.imports) {
+            this.add(parsedFile.path, imp);
         }
     }
 
-    return [...modules].sort();
+    build(repository) {
+        this.clear();
+
+        const files = repository.files ?? repository;
+
+        for (const file of files) {
+            this.addFile(file);
+        }
+
+        return this;
+    }
+
+    file(path) {
+        return this.byFile.get(path) ?? [];
+    }
+
+    source(module) {
+        return this.bySource.get(module) ?? [];
+    }
+
+    stats() {
+        return {
+            files: this.byFile.size,
+            modules: this.bySource.size,
+        };
+    }
+}
+
+export function buildImportIndex(repository) {
+    return new ImportIndex().build(repository);
 }
