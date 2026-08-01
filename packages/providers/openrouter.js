@@ -2,7 +2,9 @@ import { OpenRouter } from "@openrouter/sdk";
 
 export function createOpenRouter(config) {
   if (!config.apiKey) {
-    throw new Error("OPENROUTER_API_KEY is not configured.");
+    throw new Error(
+      "OPENROUTER_API_KEY is not configured."
+    );
   }
 
   const client = new OpenRouter({
@@ -11,15 +13,24 @@ export function createOpenRouter(config) {
 
   function buildRequest({
     messages,
-    model = config.model,
+    model,
     temperature = config.temperature,
     maxTokens = config.maxTokens,
     thinking,
     stream = false,
     ...options
   }) {
+    if (
+      typeof model !== "string" ||
+      model.trim().length === 0
+    ) {
+      throw new Error(
+        "OpenRouter model is required."
+      );
+    }
+
     const request = {
-      model,
+      model: model.trim(),
       messages,
       temperature,
       max_tokens: maxTokens,
@@ -30,7 +41,9 @@ export function createOpenRouter(config) {
     // Future-proof reasoning support.
     if (thinking?.enabled) {
       request.reasoning = {
-        effort: thinking.mode ?? "medium",
+        effort:
+          thinking.mode ??
+          "medium",
       };
     }
 
@@ -49,7 +62,9 @@ export function createOpenRouter(config) {
         response.choices?.[0]?.finishReason ??
         response.choices?.[0]?.finish_reason,
 
-      message: response.choices?.[0]?.message,
+      message:
+        response.choices?.[0]?.message,
+
       raw: response,
     };
   }
@@ -100,11 +115,14 @@ export function createOpenRouter(config) {
         ...options,
       });
 
-      const response = await client.chat.send({
-        chatRequest: request,
-      });
+      const response =
+        await client.chat.send({
+          chatRequest: request,
+        });
 
-      return normalizeResponse(response);
+      return normalizeResponse(
+        response
+      );
     } catch (error) {
       throw normalizeError(error);
     }
@@ -112,7 +130,9 @@ export function createOpenRouter(config) {
 
   // Backward compatibility.
   async function chat(options) {
-    const response = await generate(options);
+    const response =
+      await generate(options);
+
     return response.message;
   }
 

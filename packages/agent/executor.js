@@ -136,24 +136,23 @@ export async function execute({
     0;
 
   const retrievedContext =
-  getRetrievedContext(rag);
+    getRetrievedContext(rag);
 
-const retrievedFiles =
-  retrievedContext.map(
-    (result) => result.path
-  );
+  const retrievedFiles =
+    retrievedContext.map(
+      (result) => result.path
+    );
 
   emit({
     type: "stage:success",
     stage: "retrieve",
-    detail: `${retrievalCount} result${
-      retrievalCount === 1 ? "" : "s"
-    }`,
+    detail: `${retrievalCount} result${retrievalCount === 1 ? "" : "s"
+      }`,
     data: {
-  count: retrievalCount,
-  files: retrievedFiles,
-  results: retrievedContext,
-},
+      count: retrievalCount,
+      files: retrievedFiles,
+      results: retrievedContext,
+    },
   });
 
   // 4. Build model context
@@ -198,14 +197,21 @@ const retrievedFiles =
     detail:
       [
         route?.provider,
+        route?.modelRole,
         route?.model,
       ]
         .filter(Boolean)
         .join(" · ") ||
       "Route selected",
     data: {
-      provider: route?.provider ?? null,
-      model: route?.model ?? null,
+      provider:
+        route?.provider ?? null,
+
+      modelRole:
+        route?.modelRole ?? null,
+
+      model:
+        route?.model ?? null,
     },
   });
 
@@ -228,16 +234,16 @@ const retrievedFiles =
       thinking?.enabled === false
         ? "Disabled"
         : [
-            thinking?.mode,
-            thinking?.budget,
-          ]
-            .filter(
-              (value) =>
-                value !== undefined &&
-                value !== null
-            )
-            .join(" · ") ||
-          "Configured",
+          thinking?.mode,
+          thinking?.budget,
+        ]
+          .filter(
+            (value) =>
+              value !== undefined &&
+              value !== null
+          )
+          .join(" · ") ||
+        "Configured",
     data: {
       enabled:
         thinking?.enabled ?? false,
@@ -260,14 +266,18 @@ const retrievedFiles =
       emit({
         type: "stage:start",
         stage: "generate",
-        detail: `Calling ${
-          route?.model ?? "model"
-        } · attempt ${currentAttempt}/${maxAttempts}`,
+        detail: `Calling ${route?.model ?? "model"
+          } · attempt ${currentAttempt}/${maxAttempts}`,
         data: {
           provider:
             route?.provider ?? null,
+
+          modelRole:
+            route?.modelRole ?? null,
+
           model:
             route?.model ?? null,
+
           attempt: currentAttempt,
           maxAttempts,
         },
@@ -307,21 +317,27 @@ const retrievedFiles =
       emit({
         type: "stage:success",
         stage: "generate",
-        detail: `${
-          route?.model ?? "Model"
-        } completed`,
+        detail: `${route?.model ?? "Model"
+          } completed`,
         data: {
           provider:
             route?.provider ?? null,
+
+          modelRole:
+            route?.modelRole ?? null,
+
           model:
             response?.model ??
             route?.model ??
             null,
+
           attempt: currentAttempt,
           maxAttempts,
+
           finishReason:
             response?.finishReason ??
             null,
+
           usage,
         },
       });
@@ -331,16 +347,22 @@ const retrievedFiles =
         stage: "complete",
         detail: "Execution complete",
         data: {
-  attempts: currentAttempt,
-  retrievalCount,
-  retrievedFiles,
-  retrievedContext,
-  provider:
-    route?.provider ?? null,
+          attempts: currentAttempt,
+          retrievalCount,
+          retrievedFiles,
+          retrievedContext,
+
+          provider:
+            route?.provider ?? null,
+
+          modelRole:
+            route?.modelRole ?? null,
+
           model:
             response?.model ??
             route?.model ??
             null,
+
           usage,
         },
       });
@@ -354,12 +376,12 @@ const retrievedFiles =
         context,
         response,
         telemetry: {
-  attempts: currentAttempt,
-  retrievalCount,
-  retrievedFiles,
-  retrievedContext,
-  usage,
-},
+          attempts: currentAttempt,
+          retrievalCount,
+          retrievedFiles,
+          retrievedContext,
+          usage,
+        },
       };
     } catch (error) {
       emit({
@@ -392,6 +414,10 @@ const retrievedFiles =
           error,
           route,
           providers,
+          models: config.models,
+          options: {
+            maxAttempts,
+          },
         });
 
       if (
@@ -434,6 +460,7 @@ const retrievedFiles =
         detail:
           [
             route?.provider,
+            route?.modelRole,
             route?.model,
           ]
             .filter(Boolean)
@@ -442,9 +469,16 @@ const retrievedFiles =
         data: {
           provider:
             route?.provider ?? null,
+
+          modelRole:
+            route?.modelRole ?? null,
+
           model:
             route?.model ?? null,
-          nextAttempt: attempt + 1,
+
+          nextAttempt:
+            attempt + 1,
+
           maxAttempts,
         },
       });

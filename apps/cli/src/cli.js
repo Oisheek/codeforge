@@ -56,11 +56,10 @@ export function startCLI(app) {
         repository,
         provider,
         providers: [
-          {
-            name: "openrouter",
-            defaultModel: config.model,
-          },
-        ],
+  {
+    name: "openrouter",
+  },
+],
         config,
         project,
         git,

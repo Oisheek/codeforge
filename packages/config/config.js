@@ -49,30 +49,130 @@ export function loadConfig() {
     fs.readFileSync(CONFIG_FILE, "utf8")
   );
 
-  const finalConfig = {
-    ...defaultConfig,
-    ...config,
+const configuredModels = {
+  ...defaultConfig.models,
+  ...(config.models ?? {}),
+};
 
-    // Runtime values from environment
-    apiKey: process.env.OPENROUTER_API_KEY,
+function resolveModel(
+  environmentVariable,
+  configuredValue,
+  defaultValue
+) {
+  const environmentValue =
+    process.env[environmentVariable];
 
-    model:
-      process.env.OPENROUTER_MODEL ??
-      config.model ??
-      defaultConfig.model,
+  if (
+    typeof environmentValue === "string" &&
+    environmentValue.trim().length > 0
+  ) {
+    return environmentValue.trim();
+  }
 
-    temperature: Number(
-      process.env.OPENROUTER_TEMPERATURE ??
-      config.temperature ??
-      defaultConfig.temperature
+  if (
+    typeof configuredValue === "string" &&
+    configuredValue.trim().length > 0
+  ) {
+    return configuredValue.trim();
+  }
+
+  return defaultValue;
+}
+
+ const finalConfig = {
+  ...defaultConfig,
+  ...config,
+
+  // Runtime values from environment
+  apiKey: process.env.OPENROUTER_API_KEY,
+
+  models: {
+    fast: resolveModel(
+      "CODEFORGE_MODEL_FAST",
+      configuredModels.fast,
+      defaultConfig.models.fast
     ),
 
-    maxTokens: Number(
-      process.env.OPENROUTER_MAX_TOKENS ??
-      config.maxTokens ??
-      defaultConfig.maxTokens
+    general: resolveModel(
+      "CODEFORGE_MODEL_GENERAL",
+      configuredModels.general,
+      defaultConfig.models.general
     ),
-  };
+
+    coding: resolveModel(
+      "CODEFORGE_MODEL_CODING",
+      configuredModels.coding,
+      defaultConfig.models.coding
+    ),
+
+    heavyCoding: resolveModel(
+      "CODEFORGE_MODEL_HEAVY_CODING",
+      configuredModels.heavyCoding,
+      defaultConfig.models.heavyCoding
+    ),
+
+    planner: resolveModel(
+      "CODEFORGE_MODEL_PLANNER",
+      configuredModels.planner,
+      defaultConfig.models.planner
+    ),
+
+    subagent: resolveModel(
+      "CODEFORGE_MODEL_SUBAGENT",
+      configuredModels.subagent,
+      defaultConfig.models.subagent
+    ),
+
+    vision: resolveModel(
+      "CODEFORGE_MODEL_VISION",
+      configuredModels.vision,
+      defaultConfig.models.vision
+    ),
+
+    documentVision: resolveModel(
+      "CODEFORGE_MODEL_DOCUMENT_VISION",
+      configuredModels.documentVision,
+      defaultConfig.models.documentVision
+    ),
+
+    embedding: resolveModel(
+      "CODEFORGE_MODEL_EMBEDDING",
+      configuredModels.embedding,
+      defaultConfig.models.embedding
+    ),
+
+    reranker: resolveModel(
+      "CODEFORGE_MODEL_RERANKER",
+      configuredModels.reranker,
+      defaultConfig.models.reranker
+    ),
+
+    fallback: resolveModel(
+      "CODEFORGE_MODEL_FALLBACK",
+      configuredModels.fallback,
+      defaultConfig.models.fallback
+    ),
+
+    emergency: resolveModel(
+      "CODEFORGE_MODEL_EMERGENCY",
+      configuredModels.emergency,
+      defaultConfig.models.emergency
+    ),
+  },
+
+  temperature: Number(
+    process.env.OPENROUTER_TEMPERATURE ??
+    config.temperature ??
+    defaultConfig.temperature
+  ),
+
+  maxTokens: Number(
+    process.env.OPENROUTER_MAX_TOKENS ??
+    config.maxTokens ??
+    defaultConfig.maxTokens
+  ),
+};
+
   return finalConfig;
 }
 
