@@ -175,8 +175,7 @@ export const searchFilesTool = defineTool({
   name: "search_files",
 
   description:
-    "Search project files for literal text and return matching file paths, line numbers, and lines.",
-
+  "Search the contents of project files for literal text and return matching file paths, line numbers, and lines. This tool searches file contents, not file names or paths. If the exact path of a file is already known, use read_file instead.",
   source: "builtin",
 
   capabilities: [

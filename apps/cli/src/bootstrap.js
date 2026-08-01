@@ -37,6 +37,14 @@ import {
   loadConfig,
 } from "../../../packages/config/index.js";
 
+import {
+  createToolRegistry,
+  readFileTool,
+  searchFilesTool,
+  writeFileTool,
+  editFileTool,
+} from "../../../packages/tools/index.js";
+
 import { startCLI } from "./cli.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -72,19 +80,31 @@ export async function bootstrap() {
 
     logger.success("OpenRouter provider initialized.");
 
+    const tools = createToolRegistry([
+  readFileTool,
+  searchFilesTool,
+  writeFileTool,
+  editFileTool,
+]);
+
+logger.success(
+  `Tool registry initialized (${tools.size()} tools).`
+);
+
     const systemPrompt = createSystemPrompt();
 
     logger.success("CodeForge initialized.");
 
     startCLI({
-      config,
-      project,
-      git,
-      provider,
-      repository,
-      systemPrompt,
-      execute,
-    });
+  config,
+  project,
+  git,
+  provider,
+  repository,
+  tools,
+  systemPrompt,
+  execute,
+});
 
   } catch (error) {
     logger.error(error.message);

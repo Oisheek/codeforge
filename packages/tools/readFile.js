@@ -14,7 +14,7 @@ export const readFileTool = defineTool({
   name: "read_file",
 
   description:
-    "Read the contents of a UTF-8 text file inside the current project.",
+  "Read the contents of a UTF-8 text file inside the current project. Use this tool directly when the file path is already known; do not search for the filename with search_files first.",
 
   source: "builtin",
 

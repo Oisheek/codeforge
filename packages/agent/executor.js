@@ -5,6 +5,34 @@ import { buildContext } from "./contextBuilder.js";
 import { routeRequest } from "./router.js";
 import { configureThinking } from "./thinking.js";
 import { getFallbackRoute } from "./fallback.js";
+import {
+  createOpenRouterTools,
+} from "../providers/openrouter.js";
+import {
+  executeAuthorizedTool,
+} from "../core/tool.js";
+
+import {
+  resolveToolCalls,
+} from "./toolCalls.js";
+
+
+function getAvailableTools(tools) {
+  if (!tools) {
+    return [];
+  }
+
+  if (
+    typeof tools.describe !== "function" ||
+    typeof tools.get !== "function"
+  ) {
+    throw new TypeError(
+      "Invalid tool registry."
+    );
+  }
+
+  return tools.describe();
+}
 
 function normalizeUsage(usage = {}) {
   const promptTokens =
@@ -58,11 +86,209 @@ function getRetrievedContext(rag = {}) {
     }));
 }
 
+async function executeResolvedToolCalls({
+  toolCalls,
+  registry,
+  projectRoot,
+  allowedCapabilities,
+  requestApproval = null,
+  emit,
+}) {
+  const resolvedCalls =
+    resolveToolCalls(
+      toolCalls,
+      registry
+    );
+
+  const results = [];
+
+  for (const call of resolvedCalls) {
+    emit({
+      type: "stage:start",
+      stage: "tool",
+      detail: `Running ${call.name}`,
+      data: {
+        tool: call.name,
+        toolCallId: call.id,
+      },
+    });
+
+    let result =
+  await executeAuthorizedTool(
+    call.tool,
+    call.arguments,
+    {
+      projectRoot,
+    },
+    {
+      allowedCapabilities,
+      approval: null,
+    }
+  );
+
+if (
+  !result.success &&
+  result.error?.code ===
+    "approval_required" &&
+  typeof requestApproval ===
+    "function"
+) {
+  emit({
+    type: "stage:start",
+    stage: "approval",
+    detail:
+      `Approval required for ${call.name}`,
+    data: {
+      tool: call.name,
+      toolCallId: call.id,
+      arguments: call.arguments,
+    },
+  });
+
+  const approved =
+    await requestApproval({
+      tool: call.tool,
+      toolName: call.name,
+      toolCallId: call.id,
+      arguments: call.arguments,
+      authorization:
+        result.metadata?.authorization ??
+        null,
+    });
+
+  if (approved === true) {
+    result =
+      await executeAuthorizedTool(
+        call.tool,
+        call.arguments,
+        {
+          projectRoot,
+        },
+        {
+          allowedCapabilities,
+          approval: "approved",
+        }
+      );
+  }
+  
+  else {
+  result = {
+    ...result,
+
+    error: {
+      code: "approval_denied",
+      message:
+        `Approval denied for tool: ${call.name}`,
+      details: {
+        tool: call.name,
+        toolCallId: call.id,
+      },
+    },
+
+    metadata: {
+      ...result.metadata,
+
+      authorization: {
+        ...result.metadata?.authorization,
+        allowed: false,
+        code: "approval_denied",
+        reason:
+          "User denied tool execution.",
+        requiresApproval: true,
+      },
+    },
+  };
+}
+
+  emit({
+    type:
+      approved === true &&
+      result.success
+        ? "stage:success"
+        : "stage:error",
+
+    stage: "approval",
+
+    detail:
+      approved === true
+        ? result.success
+          ? `${call.name} approved`
+          : `${call.name} approval execution failed`
+        : `${call.name} denied`,
+
+    data: {
+      tool: call.name,
+      toolCallId: call.id,
+      approved:
+        approved === true,
+    },
+  });
+}
+
+    results.push({
+      id: call.id,
+      name: call.name,
+      arguments: call.arguments,
+      result,
+    });
+
+    emit({
+      type: result.success
+        ? "stage:success"
+        : "stage:error",
+
+      stage: "tool",
+
+      detail: result.success
+        ? `${call.name} completed`
+        : `${call.name}: ${result.error?.message ??
+        "Tool execution failed"
+        }`,
+
+      data: {
+        tool: call.name,
+        toolCallId: call.id,
+        success: result.success,
+        error:
+          result.error ?? null,
+      },
+    });
+  }
+
+  return results;
+}
+
+function createToolResultMessages(
+  toolResults
+) {
+  return toolResults.map(
+    ({ id, result }) => ({
+      role: "tool",
+
+      tool_call_id: id,
+
+      content: JSON.stringify(
+        result.success
+          ? {
+            success: true,
+            output: result.output,
+          }
+          : {
+            success: false,
+            error: result.error,
+          }
+      ),
+    })
+  );
+}
+
 export async function execute({
   prompt,
   repository,
   provider,
   providers = [],
+  tools = null,
+  requestApproval = null,
   config = {},
   project = {},
   git = {},
@@ -75,12 +301,23 @@ export async function execute({
       onEvent(event);
     }
   };
+  const availableTools =
+    getAvailableTools(tools);
 
   emit({
     type: "run:start",
     stage: "run",
+    data: {
+      toolCount: availableTools.length,
+      tools: availableTools.map(
+        (tool) => tool.name
+      ),
+    },
   });
-
+  const modelTools =
+    createOpenRouterTools(
+      availableTools
+    );
   // 1. Detect intent
   emit({
     type: "stage:start",
@@ -259,6 +496,25 @@ export async function execute({
   const maxAttempts =
     config.maxAttempts ?? 3;
 
+  const maxToolRounds =
+    config.maxToolRounds ?? 10;
+
+  const messages = [];
+
+  if (context.system) {
+    messages.push({
+      role: "system",
+      content: context.system,
+    });
+  }
+
+  messages.push({
+    role: "user",
+    content:
+      context.modelUser ??
+      context.user,
+  });
+
   while (attempt < maxAttempts) {
     const currentAttempt = attempt + 1;
 
@@ -283,33 +539,119 @@ export async function execute({
         },
       });
 
-      const messages = [];
+      let response = null;
+      let toolResults = [];
+      let toolRound = 0;
 
-      if (context.system) {
-        messages.push({
-          role: "system",
-          content: context.system,
+      while (true) {
+        response =
+          await provider.generate({
+            messages,
+            model: route.model,
+            temperature:
+              route.temperature,
+            maxTokens:
+              route.maxTokens,
+            thinking,
+            tools: modelTools,
+            stream: route.stream,
+          });
+
+        const responseToolCalls =
+          Array.isArray(response?.toolCalls)
+            ? response.toolCalls
+            : [];
+
+        // Model produced a normal final response.
+        if (responseToolCalls.length === 0) {
+          break;
+        }
+
+        if (toolRound >= maxToolRounds) {
+          const error =
+            new Error(
+              `Maximum tool rounds exceeded (${maxToolRounds}).`
+            );
+
+          error.code =
+            "max_tool_rounds_exceeded";
+
+          throw error;
+        }
+
+        emit({
+          type: "stage:start",
+          stage: "tool_round",
+          detail:
+            `Tool round ${toolRound + 1}/${maxToolRounds}`,
+          data: {
+            round: toolRound + 1,
+            maxToolRounds,
+            count:
+              responseToolCalls.length,
+          },
+        });
+
+        const roundResults =
+          await executeResolvedToolCalls({
+            toolCalls:
+              responseToolCalls,
+
+            registry:
+              tools,
+
+            projectRoot:
+              project.root,
+
+            allowedCapabilities: [
+              "filesystem.read",
+              "filesystem.search",
+              "filesystem.write",
+            ],
+
+            requestApproval,
+
+            emit,
+          });
+
+        toolResults.push(
+          ...roundResults
+        );
+
+        /*
+         * Preserve the assistant turn that requested
+         * the tools.
+         */
+        if (response.message) {
+          messages.push(
+            response.message
+          );
+        }
+
+        const toolMessages =
+          createToolResultMessages(
+            roundResults
+          );
+
+        messages.push(
+          ...toolMessages
+        );
+
+        toolRound += 1;
+
+        emit({
+          type: "stage:success",
+          stage: "tool_round",
+          detail:
+            `Tool round ${toolRound} completed`,
+          data: {
+            round: toolRound,
+            maxToolRounds,
+            count:
+              roundResults.length,
+          },
         });
       }
-
-      messages.push({
-        role: "user",
-        content:
-          context.modelUser ??
-          context.user,
-      });
-
-      const response =
-        await provider.generate({
-          messages,
-          model: route.model,
-          temperature:
-            route.temperature,
-          maxTokens:
-            route.maxTokens,
-          thinking,
-          stream: route.stream,
-        });
 
       const usage =
         normalizeUsage(response?.usage);
@@ -338,6 +680,8 @@ export async function execute({
             response?.finishReason ??
             null,
 
+          toolRounds: toolRound,
+
           usage,
         },
       });
@@ -363,6 +707,9 @@ export async function execute({
             route?.model ??
             null,
 
+          toolRounds:
+            toolRound,
+
           usage,
         },
       });
@@ -375,8 +722,10 @@ export async function execute({
         thinking,
         context,
         response,
+        toolResults,
         telemetry: {
           attempts: currentAttempt,
+          toolRounds: toolRound,
           retrievalCount,
           retrievedFiles,
           retrievedContext,

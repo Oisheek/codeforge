@@ -41,6 +41,8 @@ export const defaultConfig = {
 
   maxAttempts: 3,
 
+  maxToolRounds: 10,
+
   confirmEdits: true,
 
   theme: "default",

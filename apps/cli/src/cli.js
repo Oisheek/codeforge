@@ -4,6 +4,59 @@ import {
   createAgentDashboard,
 } from "../../../packages/terminal/index.js";
 
+async function requestToolApproval(
+  prompt,
+  request
+) {
+  const {
+    toolName,
+    arguments: args = {},
+  } = request;
+
+  logger.plain("");
+  logger.warn(
+    `Approval required: ${toolName}`
+  );
+
+  if (args.path) {
+    logger.plain(
+      `Path: ${args.path}`
+    );
+  }
+
+  if (
+    toolName === "write_file" &&
+    typeof args.content === "string"
+  ) {
+    logger.plain(
+      `Content size: ${Buffer.byteLength(
+        args.content,
+        "utf8"
+      )} bytes`
+    );
+  }
+
+  return new Promise((resolve) => {
+    prompt.question(
+      "Approve this operation? [y/N] ",
+      (answer) => {
+        const normalized =
+          answer
+            .trim()
+            .toLowerCase();
+
+        const approved =
+          normalized === "y" ||
+          normalized === "yes";
+
+        logger.plain("");
+
+        resolve(approved);
+      }
+    );
+  });
+}
+
 export function startCLI(app) {
   const {
     config,
@@ -11,6 +64,7 @@ export function startCLI(app) {
     git,
     provider,
     repository,
+    tools,
     systemPrompt,
     execute,
   } = app;
@@ -60,11 +114,20 @@ export function startCLI(app) {
     name: "openrouter",
   },
 ],
+        tools,
         config,
         project,
         git,
         memory: {},
         systemPrompt,
+
+        requestApproval:
+  (request) =>
+    requestToolApproval(
+      prompt,
+      request
+    ),
+
         onEvent: dashboard.handle,
       });
 

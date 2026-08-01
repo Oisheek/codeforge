@@ -4,10 +4,10 @@ import { colors } from "./colors.js";
 
 const STATUS = Object.freeze({
   pending: "○",
-  running: "◉",
+  running: "●",
   success: "✔",
   error: "✖",
-  skipped: "–",
+  skipped: "—",
 });
 
 const LABELS = Object.freeze({
@@ -18,6 +18,9 @@ const LABELS = Object.freeze({
   route: "Routing",
   thinking: "Reasoning",
   generate: "Model",
+  tool_round: "Tool Round",
+  tool: "Tool",
+  approval: "Approval",
   fallback: "Fallback",
   complete: "Complete",
 });
@@ -90,7 +93,10 @@ function statusColor(status, text) {
   return colors.text(text);
 }
 
-function formatRepositoryPath(filePath, projectRoot) {
+function formatRepositoryPath(
+  filePath,
+  projectRoot
+) {
   if (!filePath) {
     return "";
   }
@@ -112,7 +118,9 @@ function formatRepositoryPath(filePath, projectRoot) {
     return filePath;
   }
 
-  return relative.split(path.sep).join("/");
+  return relative
+    .split(path.sep)
+    .join("/");
 }
 
 function createTelemetry() {
@@ -149,11 +157,10 @@ export function createAgentDashboard({
   );
 
   const states = new Map();
-  const order = [];
 
-  let renderedLines = 0;
   let startedAt = 0;
   let telemetry = createTelemetry();
+  let headerPrinted = false;
 
   function ensureStage(stage) {
     if (!states.has(stage)) {
@@ -163,8 +170,6 @@ export function createAgentDashboard({
         startedAt: null,
         durationMs: null,
       });
-
-      order.push(stage);
     }
 
     return states.get(stage);
@@ -187,42 +192,58 @@ export function createAgentDashboard({
       if (Array.isArray(data.results)) {
         telemetry.retrievedResults =
           data.results.map((result) => ({
-            path: result?.path ?? "",
+            path:
+              result?.path ?? "",
+
             score:
-              Number.isFinite(result?.score)
+              Number.isFinite(
+                result?.score
+              )
                 ? result.score
                 : null,
+
             reason:
-              result?.reason ?? null,
+              result?.reason ??
+              null,
           }));
       }
     }
 
     if (data.provider) {
-      telemetry.provider = data.provider;
+      telemetry.provider =
+        data.provider;
     }
 
     if (data.model) {
-      telemetry.model = data.model;
+      telemetry.model =
+        data.model;
     }
 
     if (
-      Number.isFinite(data.attempt)
+      Number.isFinite(
+        data.attempt
+      )
     ) {
-      telemetry.attempt = data.attempt;
+      telemetry.attempt =
+        data.attempt;
     }
 
     if (
-      Number.isFinite(data.maxAttempts)
+      Number.isFinite(
+        data.maxAttempts
+      )
     ) {
       telemetry.maxAttempts =
         data.maxAttempts;
     }
 
     if (
-      Number.isFinite(data.attempts)
+      Number.isFinite(
+        data.attempts
+      )
     ) {
-      telemetry.attempts = data.attempts;
+      telemetry.attempts =
+        data.attempts;
     }
 
     if (data.finishReason) {
@@ -238,10 +259,15 @@ export function createAgentDashboard({
     }
   }
 
-  function buildStageLines() {
-    const lines = [];
+  function printHeader() {
+    if (
+      !interactive ||
+      headerPrinted
+    ) {
+      return;
+    }
 
-    lines.push(
+    console.log(
       colors.bold(
         colors.primary(
           "CodeForge Agent Activity"
@@ -249,100 +275,57 @@ export function createAgentDashboard({
       )
     );
 
-    lines.push(
+    console.log(
       colors.muted(
         "────────────────────────────────────────────────────────────"
       )
     );
 
-    for (const stage of order) {
-      const state = states.get(stage);
-
-      const symbol =
-        STATUS[state.status] ??
-        STATUS.pending;
-
-      const label =
-        LABELS[stage] ??
-        stage;
-
-      const duration =
-        state.durationMs == null
-          ? ""
-          : ` ${formatDuration(
-              state.durationMs
-            )}`;
-
-      const detail =
-        state.detail
-          ? `  ${colors.muted(
-              truncate(state.detail)
-            )}`
-          : "";
-
-      lines.push(
-        `${statusColor(
-          state.status,
-          symbol
-        )} ${colors.bold(
-          label.padEnd(10)
-        )}${duration}${detail}`
-      );
-    }
-
-    if (startedAt) {
-      lines.push(
-        colors.muted(
-          `Elapsed: ${formatDuration(
-            Date.now() - startedAt
-          )}`
-        )
-      );
-    }
-
-    return lines;
+    headerPrinted = true;
   }
 
-  function render() {
+  function printStage(
+    stage,
+    state
+  ) {
     if (!interactive) {
       return;
     }
 
-    if (renderedLines > 0) {
-      process.stdout.write(
-        `\x1b[${renderedLines}A`
-      );
-    }
+    printHeader();
 
-    const lines = buildStageLines();
+    const symbol =
+      STATUS[state.status] ??
+      STATUS.pending;
 
-    const output = lines
-      .map(
-        (line) =>
-          `\x1b[2K\r${line}`
-      )
-      .join("\n");
+    const label =
+      LABELS[stage] ??
+      stage;
 
-    process.stdout.write(
-      `${output}\n`
+    const duration =
+      state.durationMs == null
+        ? ""
+        : ` ${formatDuration(
+            state.durationMs
+          )}`;
+
+    const detail =
+      state.detail
+        ? `  ${colors.muted(
+            truncate(
+              state.detail
+            )
+          )}`
+        : "";
+
+    console.log(
+      `${statusColor(
+        state.status,
+        symbol
+      )} ${colors.bold(
+        label.padEnd(10)
+      )}${duration}${detail}`
     );
-
-    if (
-      renderedLines >
-      lines.length
-    ) {
-      for (
-        let i = lines.length;
-        i < renderedLines;
-        i += 1
-      ) {
-        process.stdout.write(
-          "\x1b[2K\n"
-        );
-      }
-    }
-
-    renderedLines = lines.length;
   }
 
   function renderTelemetry() {
@@ -351,7 +334,8 @@ export function createAgentDashboard({
     }
 
     const results =
-      telemetry.retrievedResults.length > 0
+      telemetry.retrievedResults
+        .length > 0
         ? telemetry.retrievedResults
         : telemetry.retrievedFiles.map(
             (file) => ({
@@ -362,7 +346,7 @@ export function createAgentDashboard({
           );
 
     if (results.length > 0) {
-      process.stdout.write("\n");
+      console.log("");
 
       console.log(
         colors.bold(
@@ -380,22 +364,32 @@ export function createAgentDashboard({
 
       results.forEach(
         (result, index) => {
-          const number = String(
-            index + 1
-          ).padStart(2, "0");
+          const number =
+            String(
+              index + 1
+            ).padStart(
+              2,
+              "0"
+            );
 
           const metadata = [
             result.reason,
-            Number.isFinite(result.score)
+
+            Number.isFinite(
+              result.score
+            )
               ? `score ${result.score}`
               : null,
           ]
             .filter(Boolean)
             .join(" · ");
 
-          const suffix = metadata
-            ? `  ${colors.muted(metadata)}`
-            : "";
+          const suffix =
+            metadata
+              ? `  ${colors.muted(
+                  metadata
+                )}`
+              : "";
 
           const displayPath =
             formatRepositoryPath(
@@ -415,7 +409,8 @@ export function createAgentDashboard({
       );
     }
 
-    const usage = telemetry.usage;
+    const usage =
+      telemetry.usage;
 
     const hasUsage =
       usage.promptTokens > 0 ||
@@ -429,7 +424,7 @@ export function createAgentDashboard({
       telemetry.model ||
       telemetry.provider
     ) {
-      process.stdout.write("\n");
+      console.log("");
 
       console.log(
         colors.bold(
@@ -469,7 +464,9 @@ export function createAgentDashboard({
         console.log(
           `${colors.bold(
             "Attempts"
-          )}     ${telemetry.attempts}`
+          )}     ${
+            telemetry.attempts
+          }`
         );
       } else if (
         Number.isFinite(
@@ -531,11 +528,15 @@ export function createAgentDashboard({
         )}`
       );
 
-      if (telemetry.finishReason) {
+      if (
+        telemetry.finishReason
+      ) {
         console.log(
           `${colors.bold(
             "Finish"
-          )}       ${telemetry.finishReason}`
+          )}       ${
+            telemetry.finishReason
+          }`
         );
       }
     }
@@ -549,13 +550,19 @@ export function createAgentDashboard({
       return;
     }
 
-    if (event.type === "run:start") {
+    if (
+      event.type ===
+      "run:start"
+    ) {
       states.clear();
-      order.length = 0;
-      renderedLines = 0;
-      startedAt = Date.now();
+
+      startedAt =
+        Date.now();
+
       telemetry =
         createTelemetry();
+
+      headerPrinted = false;
 
       return;
     }
@@ -563,19 +570,36 @@ export function createAgentDashboard({
     updateTelemetry(event);
 
     const state =
-      ensureStage(event.stage);
+      ensureStage(
+        event.stage
+      );
 
     if (
-      event.type === "stage:start"
+      event.type ===
+      "stage:start"
     ) {
-      state.status = "running";
-      state.startedAt = Date.now();
+      state.status =
+        "running";
+
+      state.startedAt =
+        Date.now();
+
       state.detail =
         event.detail ?? "";
-    } else if (
-      event.type === "stage:success"
+
+      // Do not print stage:start.
+      // Only completed/error/skipped
+      // states are printed so the
+      // dashboard stays concise.
+      return;
+    }
+
+    if (
+      event.type ===
+      "stage:success"
     ) {
-      state.status = "success";
+      state.status =
+        "success";
 
       state.durationMs =
         state.startedAt
@@ -588,9 +612,11 @@ export function createAgentDashboard({
         event.detail ??
         state.detail;
     } else if (
-      event.type === "stage:error"
+      event.type ===
+      "stage:error"
     ) {
-      state.status = "error";
+      state.status =
+        "error";
 
       state.durationMs =
         state.startedAt
@@ -603,16 +629,23 @@ export function createAgentDashboard({
         event.detail ??
         "Failed";
     } else if (
-      event.type === "stage:skipped"
+      event.type ===
+      "stage:skipped"
     ) {
-      state.status = "skipped";
+      state.status =
+        "skipped";
 
       state.detail =
         event.detail ??
         "Skipped";
+    } else {
+      return;
     }
 
-    render();
+    printStage(
+      event.stage,
+      state
+    );
   }
 
   function finish() {
@@ -620,17 +653,23 @@ export function createAgentDashboard({
       return;
     }
 
-    render();
-
-    process.stdout.write("\n");
-
-    renderedLines = 0;
+    if (startedAt) {
+      console.log(
+        colors.muted(
+          `Elapsed: ${formatDuration(
+            Date.now() -
+              startedAt
+          )}`
+        )
+      );
+    }
 
     renderTelemetry();
 
-    process.stdout.write("\n");
+    console.log("");
 
     startedAt = 0;
+    headerPrinted = false;
   }
 
   return {
