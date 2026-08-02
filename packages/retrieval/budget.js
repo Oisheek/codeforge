@@ -36,7 +36,7 @@ export class ContextBudget {
             const cost = this.estimate(text);
 
             if (used + cost > this.limit) {
-                break;
+                continue;
             }
 
             used += cost;

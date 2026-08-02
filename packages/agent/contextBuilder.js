@@ -1,4 +1,4 @@
-function formatRetrievalResults(results = []) {
+export function formatRetrievalResults(results = []) {
   if (!Array.isArray(results) || results.length === 0) {
     return "";
   }
