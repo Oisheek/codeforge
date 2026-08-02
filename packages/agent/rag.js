@@ -1,3 +1,9 @@
+const DEFAULT_RETRIEVAL_OPTIONS =
+  Object.freeze({
+    limit: 6,
+    maxSourceLength: 2500,
+  });
+
 export async function retrieveContext({
   repository,
   plan,
@@ -16,22 +22,41 @@ export async function retrieveContext({
   }
 
   if (!repository?.retriever) {
-    throw new Error("Repository retriever has not been initialized.");
+    throw new Error(
+      "Repository retriever has not been initialized."
+    );
   }
 
+  const retrievalOptions = {
+    ...DEFAULT_RETRIEVAL_OPTIONS,
+    ...options,
+  };
+
   const results =
-    (await repository.retriever.search(query, options)) ?? [];
+    (await repository.retriever.search(
+      query,
+      retrievalOptions
+    )) ?? [];
+
+  const normalizedResults =
+    Array.isArray(results)
+      ? results
+      : [results].filter(Boolean);
 
   return {
     enabled: true,
     query,
-    results: Array.isArray(results) ? results : [results].filter(Boolean),
+    results: normalizedResults,
+
     stats: {
-      retrieved: Array.isArray(results)
-        ? results.length
-        : results
-          ? 1
-          : 0,
+      retrieved:
+        normalizedResults.length,
+
+      limit:
+        retrievalOptions.limit,
+
+      maxSourceLength:
+        retrievalOptions.maxSourceLength,
     },
   };
 }

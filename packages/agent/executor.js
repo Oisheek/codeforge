@@ -13,6 +13,7 @@ import {
 } from "../core/tool.js";
 
 import {
+  createToolCallFailure,
   resolveToolCalls,
 } from "./toolCalls.js";
 
@@ -69,6 +70,124 @@ function normalizeUsage(usage = {}) {
   };
 }
 
+function estimateTextTokens(text = "") {
+  if (typeof text !== "string") {
+    return 0;
+  }
+
+  return Math.ceil(text.length / 4);
+}
+
+function measureModelContext({
+  messages = [],
+  tools = [],
+}) {
+  let systemChars = 0;
+  let userChars = 0;
+  let assistantChars = 0;
+  let toolResultChars = 0;
+
+  for (const message of messages) {
+    const content =
+      typeof message?.content === "string"
+        ? message.content
+        : "";
+
+    switch (message?.role) {
+      case "system":
+        systemChars += content.length;
+        break;
+
+      case "user":
+        userChars += content.length;
+        break;
+
+      case "assistant":
+        assistantChars += content.length;
+        break;
+
+      case "tool":
+        toolResultChars += content.length;
+        break;
+
+      default:
+        break;
+    }
+  }
+
+  const toolSchemaChars =
+    JSON.stringify(
+      tools ?? []
+    ).length;
+
+  const messageChars =
+    systemChars +
+    userChars +
+    assistantChars +
+    toolResultChars;
+
+  const totalChars =
+    messageChars +
+    toolSchemaChars;
+
+  return {
+    messages:
+      messages.length,
+
+    chars: {
+      system:
+        systemChars,
+
+      user:
+        userChars,
+
+      assistant:
+        assistantChars,
+
+      toolResults:
+        toolResultChars,
+
+      toolSchemas:
+        toolSchemaChars,
+
+      total:
+        totalChars,
+    },
+
+    estimatedTokens: {
+      system:
+        Math.ceil(
+          systemChars / 4
+        ),
+
+      user:
+        Math.ceil(
+          userChars / 4
+        ),
+
+      assistant:
+        Math.ceil(
+          assistantChars / 4
+        ),
+
+      toolResults:
+        Math.ceil(
+          toolResultChars / 4
+        ),
+
+      toolSchemas:
+        Math.ceil(
+          toolSchemaChars / 4
+        ),
+
+      total:
+        Math.ceil(
+          totalChars / 4
+        ),
+    },
+  };
+}
+
 function getRetrievedContext(rag = {}) {
   const results = Array.isArray(rag.results)
     ? rag.results
@@ -86,12 +205,155 @@ function getRetrievedContext(rag = {}) {
     }));
 }
 
+function stableSerialize(value) {
+  if (
+    value === null ||
+    typeof value !== "object"
+  ) {
+    return JSON.stringify(value);
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value
+      .map(stableSerialize)
+      .join(",")}]`;
+  }
+
+  const keys =
+    Object.keys(value).sort();
+
+  return `{${keys
+    .map(
+      (key) =>
+        `${JSON.stringify(key)}:${stableSerialize(
+          value[key]
+        )}`
+    )
+    .join(",")}}`;
+}
+
+function createToolCallFingerprint(
+  name,
+  args
+) {
+  return `${name}:${stableSerialize(
+    args ?? {}
+  )}`;
+}
+
+function createDuplicateToolResult({
+  call,
+  previous,
+}) {
+  const now = Date.now();
+
+  return {
+    success: false,
+    tool: call.name,
+
+    output: null,
+
+    error: {
+      code: "duplicate_tool_call",
+
+      message:
+        `Duplicate tool call skipped: ${call.name}`,
+
+      details: {
+        tool: call.name,
+        previousToolCallId:
+          previous?.id ?? null,
+      },
+    },
+
+    metadata: {
+      source: "agent",
+      sideEffect:
+        call.tool?.sideEffect ??
+        "none",
+
+      approval:
+        call.tool?.approval ??
+        "never",
+
+      authorization: {
+        allowed: false,
+        code: "duplicate_tool_call",
+        reason:
+          "An identical side-effect-free tool call already completed during this execution.",
+        requiresApproval: false,
+      },
+    },
+
+    timing: {
+      startedAt: now,
+      completedAt: now,
+      durationMs: 0,
+    },
+  };
+}
+
+function createToolBudgetResult({
+  call,
+  budget,
+}) {
+  const now = Date.now();
+
+  return {
+    success: false,
+    tool: call.name,
+
+    output: null,
+
+    error: {
+      code: "tool_budget_exceeded",
+
+      message:
+        `Tool budget exhausted for ${call.name}. Use the repository context and tool results already collected.`,
+
+      details: {
+        tool: call.name,
+        used: budget.used,
+        max: budget.max,
+      },
+    },
+
+    metadata: {
+      source: "agent",
+
+      sideEffect:
+        call.tool?.sideEffect ??
+        "none",
+
+      approval:
+        call.tool?.approval ??
+        "never",
+
+      authorization: {
+        allowed: false,
+        code: "tool_budget_exceeded",
+        reason:
+          "The per-execution exploration budget for this tool has been exhausted.",
+        requiresApproval: false,
+      },
+    },
+
+    timing: {
+      startedAt: now,
+      completedAt: now,
+      durationMs: 0,
+    },
+  };
+}
+
 async function executeResolvedToolCalls({
   toolCalls,
   registry,
   projectRoot,
   allowedCapabilities,
   requestApproval = null,
+  toolCallHistory = null,
+  toolBudget = null,
   emit,
 }) {
   const resolvedCalls =
@@ -103,61 +365,119 @@ async function executeResolvedToolCalls({
   const results = [];
 
   for (const call of resolvedCalls) {
-    emit({
-      type: "stage:start",
-      stage: "tool",
-      detail: `Running ${call.name}`,
-      data: {
-        tool: call.name,
-        toolCallId: call.id,
-      },
+    const fingerprint =
+      createToolCallFingerprint(
+        call.name,
+        call.arguments
+      );
+
+    const canDeduplicate =
+      call.tool?.sideEffect ===
+      "none" &&
+      toolCallHistory instanceof Map;
+
+    const previous =
+      canDeduplicate
+        ? toolCallHistory.get(
+          fingerprint
+        )
+        : null;
+
+   if (previous) {
+  const result =
+    createDuplicateToolResult({
+      call,
+      previous,
     });
 
-    let result =
-  await executeAuthorizedTool(
-    call.tool,
-    call.arguments,
-    {
-      projectRoot,
-    },
-    {
-      allowedCapabilities,
-      approval: null,
-    }
-  );
+  results.push({
+    id: call.id,
+    name: call.name,
+    arguments: call.arguments,
+    result,
+  });
 
-if (
-  !result.success &&
-  result.error?.code ===
-    "approval_required" &&
-  typeof requestApproval ===
-    "function"
-) {
   emit({
-    type: "stage:start",
-    stage: "approval",
+    type: "stage:error",
+    stage: "tool",
+
     detail:
-      `Approval required for ${call.name}`,
+      `${call.name}: duplicate call skipped`,
+
     data: {
       tool: call.name,
       toolCallId: call.id,
-      arguments: call.arguments,
+      success: false,
+      duplicate: true,
+
+      previousToolCallId:
+        previous.id,
+
+      error: result.error,
     },
   });
 
-  const approved =
-    await requestApproval({
-      tool: call.tool,
-      toolName: call.name,
-      toolCallId: call.id,
-      arguments: call.arguments,
-      authorization:
-        result.metadata?.authorization ??
-        null,
+  continue;
+}
+
+const budget =
+  toolBudget &&
+  typeof toolBudget === "object"
+    ? toolBudget[call.name]
+    : null;
+
+if (
+  budget &&
+  budget.used >= budget.max
+) {
+  const result =
+    createToolBudgetResult({
+      call,
+      budget,
     });
 
-  if (approved === true) {
-    result =
+  results.push({
+    id: call.id,
+    name: call.name,
+    arguments: call.arguments,
+    result,
+  });
+
+  emit({
+    type: "stage:error",
+    stage: "tool",
+
+    detail:
+      `${call.name}: tool budget exhausted`,
+
+    data: {
+      tool: call.name,
+      toolCallId: call.id,
+      success: false,
+      budgetExceeded: true,
+      used: budget.used,
+      max: budget.max,
+      error: result.error,
+    },
+  });
+
+  continue;
+}
+
+if (budget) {
+  budget.used += 1;
+}
+
+emit({
+  type: "stage:start",
+  stage: "tool",
+  detail: `Running ${call.name}`,
+  data: {
+    tool: call.name,
+    toolCallId: call.id,
+  },
+});
+    let result =
       await executeAuthorizedTool(
         call.tool,
         call.arguments,
@@ -166,64 +486,108 @@ if (
         },
         {
           allowedCapabilities,
-          approval: "approved",
+          approval: null,
         }
       );
-  }
-  
-  else {
-  result = {
-    ...result,
 
-    error: {
-      code: "approval_denied",
-      message:
-        `Approval denied for tool: ${call.name}`,
-      details: {
-        tool: call.name,
-        toolCallId: call.id,
-      },
-    },
+    if (
+      !result.success &&
+      result.error?.code ===
+      "approval_required" &&
+      typeof requestApproval ===
+      "function"
+    ) {
+      emit({
+        type: "stage:start",
+        stage: "approval",
+        detail:
+          `Approval required for ${call.name}`,
+        data: {
+          tool: call.name,
+          toolCallId: call.id,
+          arguments: call.arguments,
+        },
+      });
 
-    metadata: {
-      ...result.metadata,
+      const approved =
+        await requestApproval({
+          tool: call.tool,
+          toolName: call.name,
+          toolCallId: call.id,
+          arguments: call.arguments,
+          authorization:
+            result.metadata?.authorization ??
+            null,
+        });
 
-      authorization: {
-        ...result.metadata?.authorization,
-        allowed: false,
-        code: "approval_denied",
-        reason:
-          "User denied tool execution.",
-        requiresApproval: true,
-      },
-    },
-  };
-}
+      if (approved === true) {
+        result =
+          await executeAuthorizedTool(
+            call.tool,
+            call.arguments,
+            {
+              projectRoot,
+            },
+            {
+              allowedCapabilities,
+              approval: "approved",
+            }
+          );
+      }
 
-  emit({
-    type:
-      approved === true &&
-      result.success
-        ? "stage:success"
-        : "stage:error",
+      else {
+        result = {
+          ...result,
 
-    stage: "approval",
+          error: {
+            code: "approval_denied",
+            message:
+              `Approval denied for tool: ${call.name}`,
+            details: {
+              tool: call.name,
+              toolCallId: call.id,
+            },
+          },
 
-    detail:
-      approved === true
-        ? result.success
-          ? `${call.name} approved`
-          : `${call.name} approval execution failed`
-        : `${call.name} denied`,
+          metadata: {
+            ...result.metadata,
 
-    data: {
-      tool: call.name,
-      toolCallId: call.id,
-      approved:
-        approved === true,
-    },
-  });
-}
+            authorization: {
+              ...result.metadata?.authorization,
+              allowed: false,
+              code: "approval_denied",
+              reason:
+                "User denied tool execution.",
+              requiresApproval: true,
+            },
+          },
+        };
+      }
+
+      emit({
+        type:
+          approved === true &&
+            result.success
+            ? "stage:success"
+            : "stage:error",
+
+        stage: "approval",
+
+        detail:
+          approved === true
+            ? result.success
+              ? `${call.name} approved`
+              : `${call.name} approval execution failed`
+            : `${call.name} denied`,
+
+        data: {
+          tool: call.name,
+          toolCallId: call.id,
+          approved:
+            approved === true,
+        },
+      });
+    }
 
     results.push({
       id: call.id,
@@ -231,7 +595,20 @@ if (
       arguments: call.arguments,
       result,
     });
-
+    if (
+      canDeduplicate &&
+      result.success
+    ) {
+      toolCallHistory.set(
+        fingerprint,
+        {
+          id: call.id,
+          name: call.name,
+          arguments:
+            call.arguments,
+        }
+      );
+    }
     emit({
       type: result.success
         ? "stage:success"
@@ -343,7 +720,13 @@ export async function execute({
     detail: "Building execution plan",
   });
 
-  const plan = createExecutionPlan(intent);
+  const plan =
+    createExecutionPlan(
+      intent,
+      {
+        prompt,
+      }
+    );
 
   emit({
     type: "stage:success",
@@ -354,17 +737,20 @@ export async function execute({
   });
 
   // 3. Retrieve repository context
-  emit({
-    type: "stage:start",
-    stage: "retrieve",
-    detail: "Searching repository context",
-  });
+  if (plan?.requiresRAG) {
+    emit({
+      type: "stage:start",
+      stage: "retrieve",
+      detail: "Searching repository context",
+    });
+  }
 
-  const rag = await retrieveContext({
-    repository,
-    plan,
-    query: prompt,
-  });
+  const rag =
+    await retrieveContext({
+      repository,
+      plan,
+      query: prompt,
+    });
 
   const retrievalCount =
     rag?.results?.length ??
@@ -377,20 +763,26 @@ export async function execute({
 
   const retrievedFiles =
     retrievedContext.map(
-      (result) => result.path
+      (result) =>
+        result.path
     );
 
-  emit({
-    type: "stage:success",
-    stage: "retrieve",
-    detail: `${retrievalCount} result${retrievalCount === 1 ? "" : "s"
-      }`,
-    data: {
-      count: retrievalCount,
-      files: retrievedFiles,
-      results: retrievedContext,
-    },
-  });
+  if (plan?.requiresRAG) {
+    emit({
+      type: "stage:success",
+      stage: "retrieve",
+      detail:
+        `${retrievalCount} result${retrievalCount === 1
+          ? ""
+          : "s"
+        }`,
+      data: {
+        count: retrievalCount,
+        files: retrievedFiles,
+        results: retrievedContext,
+      },
+    });
+  }
 
   // 4. Build model context
   emit({
@@ -498,6 +890,7 @@ export async function execute({
 
   const maxToolRounds =
     config.maxToolRounds ?? 10;
+  const maxToolProtocolErrors = 2;
 
   const messages = [];
 
@@ -542,8 +935,38 @@ export async function execute({
       let response = null;
       let toolResults = [];
       let toolRound = 0;
+      let toolProtocolErrors = 0;
+
+      const toolCallHistory =
+        new Map();
+
+      const toolBudget = {
+        search_files: {
+          used: 0,
+          max: 2,
+        },
+
+        read_file: {
+          used: 0,
+          max: 6,
+        },
+      };
 
       while (true) {
+        const contextMetrics =
+          measureModelContext({
+            messages,
+            tools: modelTools,
+          });
+
+        emit({
+          type: "context:metrics",
+          stage: "context",
+          data: {
+            toolRound,
+            ...contextMetrics,
+          },
+        });
         response =
           await provider.generate({
             messages,
@@ -592,27 +1015,92 @@ export async function execute({
           },
         });
 
-        const roundResults =
-          await executeResolvedToolCalls({
-            toolCalls:
-              responseToolCalls,
+        let roundResults;
 
-            registry:
-              tools,
+        try {
+          roundResults =
+            await executeResolvedToolCalls({
+              toolCalls:
+                responseToolCalls,
 
-            projectRoot:
-              project.root,
+              registry:
+                tools,
 
-            allowedCapabilities: [
-              "filesystem.read",
-              "filesystem.search",
-              "filesystem.write",
-            ],
+              projectRoot:
+                project.root,
 
-            requestApproval,
+              allowedCapabilities: [
+                "filesystem.read",
+                "filesystem.search",
+                "filesystem.write",
+              ],
 
-            emit,
+              requestApproval,
+
+              toolCallHistory,
+              toolBudget,
+
+              emit,
+            });
+        } catch (error) {
+          const recoverable =
+            error?.code ===
+            "invalid_tool_arguments";
+
+          if (!recoverable) {
+            throw error;
+          }
+
+          toolProtocolErrors += 1;
+
+          if (
+            toolProtocolErrors >
+            maxToolProtocolErrors
+          ) {
+            const protocolError =
+              new Error(
+                `Maximum tool protocol errors exceeded (${maxToolProtocolErrors}).`
+              );
+
+            protocolError.code =
+              "max_tool_protocol_errors_exceeded";
+
+            protocolError.cause =
+              error;
+
+            throw protocolError;
+          }
+
+          /*
+           * Do not execute malformed calls.
+           * Return a protocol error to the model so it can
+           * correct the arguments on the next round.
+           */
+          roundResults =
+            responseToolCalls.map(
+              (toolCall) =>
+                createToolCallFailure({
+                  toolCall,
+                  error,
+                })
+            );
+
+          emit({
+            type: "stage:error",
+            stage: "tool",
+            detail:
+              `${error.message} Retrying with model correction.`,
+            data: {
+              code:
+                error.code,
+
+              protocolError:
+                toolProtocolErrors,
+
+              maxToolProtocolErrors,
+            },
           });
+        }
 
         toolResults.push(
           ...roundResults

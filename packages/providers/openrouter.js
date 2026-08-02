@@ -211,39 +211,79 @@ export function createOpenRouter(
     };
   }
 
-  function normalizeError(
-    error
+function normalizeError(
+  error
+) {
+  const message =
+    error?.message ??
+    error?.error?.message ??
+    error?.body?.error
+      ?.message ??
+    error?.response?.data
+      ?.error?.message ??
+    "OpenRouter request failed.";
+
+  const status =
+    error?.status ??
+    error?.statusCode ??
+    error?.response
+      ?.status ??
+    null;
+
+  const rawCode =
+    error?.code ??
+    error?.error?.code ??
+    error?.body?.error
+      ?.code ??
+    error?.response?.data
+      ?.error?.code ??
+    null;
+
+  let code =
+    "provider_error";
+
+  if (
+    status === 429 ||
+    rawCode === 429 ||
+    rawCode === "429" ||
+    rawCode === "rate_limit" ||
+    rawCode === "rate_limit_exceeded"
   ) {
-    const message =
-      error?.message ??
-      error?.error?.message ??
-      error?.body?.error
-        ?.message ??
-      error?.response?.data
-        ?.error?.message ??
-      "OpenRouter request failed.";
-
-    const code =
-      error?.code ??
-      error?.error?.code ??
-      error?.body?.error
-        ?.code ??
-      "provider_error";
-
-    const status =
-      error?.status ??
-      error?.statusCode ??
-      error?.response
-        ?.status;
-
-    return {
-      code,
-      status,
-      message,
-      cause:
-        error,
-    };
+    code = "rate_limit";
+  } else if (
+    status === 408 ||
+    status === 504 ||
+    rawCode === "timeout" ||
+    rawCode === "ETIMEDOUT"
+  ) {
+    code = "timeout";
+  } else if (
+    status === 502 ||
+    status === 503 ||
+    rawCode === "overloaded"
+  ) {
+    code = "overloaded";
+  } else if (
+    rawCode === "network" ||
+    rawCode === "ECONNRESET" ||
+    rawCode === "ECONNREFUSED" ||
+    rawCode === "ENOTFOUND"
+  ) {
+    code = "network";
   }
+
+  return {
+    code,
+    status,
+    message,
+
+    providerCode:
+      rawCode,
+
+    cause:
+      error,
+  };
+}
 
   async function generate({
     messages,

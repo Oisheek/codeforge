@@ -172,4 +172,72 @@ export function resolveToolCalls(
       };
     }
   );
+  
+}
+
+export function createToolCallFailure({
+  toolCall,
+  error,
+}) {
+  const id =
+  typeof toolCall?.id === "string" &&
+  toolCall.id.trim().length > 0
+    ? toolCall.id
+    : `invalid_tool_call_${Date.now()}_${Math.random()
+        .toString(36)
+        .slice(2, 10)}`;
+
+  const name =
+    typeof toolCall?.function?.name === "string"
+      ? toolCall.function.name.trim()
+      : null;
+
+  return {
+    id,
+    name,
+    arguments: null,
+
+    result: {
+      success: false,
+      tool: name,
+
+      output: null,
+
+      error: {
+        code:
+          error?.code ??
+          "invalid_tool_call",
+
+        message:
+          error?.message ??
+          "Invalid tool call.",
+
+        details:
+          error?.details ?? null,
+      },
+
+      metadata: {
+        source: "model",
+        sideEffect: "none",
+        approval: "never",
+
+        authorization: {
+          allowed: false,
+          code:
+            error?.code ??
+            "invalid_tool_call",
+          reason:
+            error?.message ??
+            "Invalid tool call.",
+          requiresApproval: false,
+        },
+      },
+
+      timing: {
+        startedAt: Date.now(),
+        completedAt: Date.now(),
+        durationMs: 0,
+      },
+    },
+  };
 }

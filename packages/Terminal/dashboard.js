@@ -128,6 +128,8 @@ function createTelemetry() {
     retrievedFiles: [],
     retrievedResults: [],
 
+    contextMetrics: [],
+
     provider: null,
     model: null,
 
@@ -181,6 +183,26 @@ export function createAgentDashboard({
     if (!data) {
       return;
     }
+
+    if (
+  event.type === "context:metrics"
+) {
+  telemetry.contextMetrics.push({
+    toolRound:
+      data.toolRound ?? 0,
+
+    messages:
+      data.messages ?? 0,
+
+    chars:
+      data.chars ?? {},
+
+    estimatedTokens:
+      data.estimatedTokens ?? {},
+  });
+
+  return;
+}
 
     if (event.stage === "retrieve") {
       if (Array.isArray(data.files)) {
@@ -408,6 +430,77 @@ export function createAgentDashboard({
         }
       );
     }
+if (
+  telemetry.contextMetrics.length > 0
+) {
+  console.log("");
+
+  console.log(
+    colors.bold(
+      colors.primary(
+        "Context Usage"
+      )
+    )
+  );
+
+  console.log(
+    colors.muted(
+      "────────────────────────────────────────────────────────────"
+    )
+  );
+
+  for (
+    const metric
+    of telemetry.contextMetrics
+  ) {
+    const tokens =
+      metric.estimatedTokens ?? {};
+
+    console.log(
+      `${colors.bold(
+        `Round ${metric.toolRound}`
+      )}      ${
+        metric.messages
+      } messages`
+    );
+
+    console.log(
+      `  System       ~${formatNumber(
+        tokens.system ?? 0
+      )} tokens`
+    );
+
+    console.log(
+      `  User/RAG     ~${formatNumber(
+        tokens.user ?? 0
+      )} tokens`
+    );
+
+    console.log(
+      `  Assistant    ~${formatNumber(
+        tokens.assistant ?? 0
+      )} tokens`
+    );
+
+    console.log(
+      `  Tool Results ~${formatNumber(
+        tokens.toolResults ?? 0
+      )} tokens`
+    );
+
+    console.log(
+      `  Tool Schemas ~${formatNumber(
+        tokens.toolSchemas ?? 0
+      )} tokens`
+    );
+
+    console.log(
+      `  Estimated    ~${formatNumber(
+        tokens.total ?? 0
+      )} tokens`
+    );
+  }
+}
 
     const usage =
       telemetry.usage;

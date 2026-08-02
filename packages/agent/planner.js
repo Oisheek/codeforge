@@ -6,9 +6,107 @@ const DEFAULT_PLAN = Object.freeze({
   requiresTools: false,
   requiresWrite: false,
   requiresGit: false,
+  directFileTarget: false,
+  fileTargets: [],
   steps: [],
 });
 
+const FILE_PATH_PATTERN =
+  /(?:^|[\s"'`(])((?:\.{0,2}[\\/])?(?:[\w@.-]+[\\/])*[\w@.-]+\.[a-z0-9]+)(?=$|[\s"'`),:;])/gi;
+
+const CROSS_FILE_PATTERNS = [
+  /\b(repository|repo|codebase|project[- ]wide|repository[- ]wide)\b/i,
+
+  /\b(across|throughout)\s+(?:the\s+)?(?:project|repository|repo|codebase)\b/i,
+
+  /\b(dependencies|dependents|dependency|imports|importers|references|usages|callers|callees)\b/i,
+
+  /\b(interaction|interactions|integration|relationship|relationships|compatible|compatibility)\b/i,
+
+  /\b(find|search|locate|discover)\b/i,
+];
+
+function getExplicitFileTargets(
+  prompt = ""
+) {
+  if (typeof prompt !== "string") {
+    return [];
+  }
+
+  const targets = [];
+
+  for (
+    const match
+    of prompt.matchAll(
+      FILE_PATH_PATTERN
+    )
+  ) {
+    const target =
+      match[1];
+
+    if (
+      target &&
+      !targets.includes(target)
+    ) {
+      targets.push(target);
+    }
+  }
+
+  return targets;
+}
+
+function requiresCrossFileContext(
+  prompt = ""
+) {
+  if (typeof prompt !== "string") {
+    return false;
+  }
+
+  return CROSS_FILE_PATTERNS.some(
+    (pattern) =>
+      pattern.test(prompt)
+  );
+}
+
+function applyRetrievalPolicy(
+  plan,
+  prompt
+) {
+  const fileTargets =
+    getExplicitFileTargets(
+      prompt
+    );
+
+  const directFileTarget =
+    fileTargets.length === 1 &&
+    !requiresCrossFileContext(
+      prompt
+    );
+
+  if (!directFileTarget) {
+    return {
+      ...plan,
+      directFileTarget: false,
+      fileTargets,
+    };
+  }
+
+  return {
+    ...plan,
+
+    requiresRAG: false,
+    requiresTools: true,
+
+    directFileTarget: true,
+    fileTargets,
+
+    steps:
+      plan.steps.filter(
+        (step) =>
+          step !== "retrieve"
+      ),
+  };
+}
 function createPlan(intent) {
   switch (intent) {
     case Intent.CHAT:
@@ -155,6 +253,17 @@ function createPlan(intent) {
   }
 }
 
-export function createExecutionPlan(intent) {
-  return createPlan(intent);
+export function createExecutionPlan(
+  intent,
+  {
+    prompt = "",
+  } = {}
+) {
+  const plan =
+    createPlan(intent);
+
+  return applyRetrievalPolicy(
+    plan,
+    prompt
+  );
 }
