@@ -93,42 +93,76 @@ export const IMPORTS = `
 
 export const EXPORTS = `
 ;; ============================================================
-;; export ...
+;; Named declaration exports
 ;; ============================================================
 
-(export_statement) @export
+(export_statement
+  declaration:
+    (function_declaration
+      name: (identifier) @export.named))
 
-(export_default_declaration) @export
+(export_statement
+  declaration:
+    (generator_function_declaration
+      name: (identifier) @export.named))
 
-(export_clause) @export
+(export_statement
+  declaration:
+    (class_declaration
+      name: (type_identifier) @export.named))
 
-(export_specifier) @export
-
-(export_all_declaration) @export
+(export_statement
+  declaration:
+    (lexical_declaration
+      (variable_declarator
+        name: (identifier) @export.named)))
 
 ;; ============================================================
-;; module.exports = ...
+;; Named export specifiers
+;; ============================================================
+
+(export_specifier
+  alias: (identifier) @export.named)
+
+(export_specifier
+  name: (identifier) @export.named)
+
+;; ============================================================
+;; Default named declarations
+;; ============================================================
+
+(export_statement
+  declaration:
+    (function_declaration
+      name: (identifier) @export.default))
+
+(export_statement
+  declaration:
+    (class_declaration
+      name: (type_identifier) @export.default))
+
+;; ============================================================
+;; CommonJS: module.exports = ...
 ;; ============================================================
 
 (assignment_expression
   left:
     (member_expression
       object: (identifier) @_module
-      property: (property_identifier) @_exports)
+      property: (property_identifier) @export.commonjs)
   (#eq? @_module "module")
-  (#eq? @_exports "exports"))
-@export
+  (#eq? @export.commonjs "exports"))
 
 ;; ============================================================
-;; exports.foo = ...
+;; CommonJS: exports.foo = ...
 ;; ============================================================
 
 (assignment_expression
   left:
     (member_expression
-      object: (identifier) @_exports)
+      object: (identifier) @_exports
+      property: (property_identifier) @export.commonjs)
   (#eq? @_exports "exports"))
-@export
 `;
 
 export const CALLS = `

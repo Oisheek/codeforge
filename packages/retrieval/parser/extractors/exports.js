@@ -22,18 +22,46 @@ export default function extractExports({
     }
 
     for (const { node, name } of iterateCaptures(query, tree)) {
+        if (
+            !name ||
+            !name.startsWith("export.")
+        ) {
+            continue;
+        }
+
+        const exportName =
+            typeof node?.text === "string"
+                ? node.text.trim()
+                : "";
+
+        if (!exportName) {
+            continue;
+        }
+
+        const kind =
+            name.replace(/^export\./, "");
+
         exportsList.push(
             createExport({
-                // Queries should capture the exported identifier.
-                name: node.text,
+                name: exportName,
 
-                // Capture name (e.g. export.default, export.named)
-                kind: name.replace(/^export\./, ""),
+                kind,
 
-                location: getNodeLocation(node),
+                default:
+                    kind === "default",
+
+                exported:
+                    exportName,
+
+                location:
+                    getNodeLocation(node),
 
                 metadata: {
-                    text: getNodeText(node, source),
+                    text:
+                        getNodeText(
+                            node,
+                            source
+                        ),
                 },
             })
         );

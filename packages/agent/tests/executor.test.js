@@ -474,11 +474,16 @@ test(
         wrappedRead,
       ]);
 
-    let providerCalls = 0;
+let providerCalls = 0;
+let recoveryMessages = null;
 
     const provider = {
-      async generate() {
-        providerCalls += 1;
+  async generate({ messages }) {
+    providerCalls += 1;
+
+    if (providerCalls === 2) {
+      recoveryMessages = messages;
+    }
 
         const toolCall = {
           id:
@@ -1428,6 +1433,845 @@ test(
     assert.equal(
       fallbackModels.length,
       0
+    );
+  }
+);
+
+test(
+  "suppresses repository search when strong RAG evidence is already available",
+  async () => {
+    const toolNamesSeen = [];
+
+    const repository = {
+      retriever: {
+        async search() {
+          return [
+            {
+              type: "file",
+              path:
+                "packages/agent/router.js",
+              score: 120,
+              reason:
+                "implementation",
+              content:
+                "export function routeRequest() { return 'openrouter'; }",
+              symbols: [],
+              imports: [],
+              exports: [],
+            },
+            {
+              type: "file",
+              path:
+                "packages/agent/fallback.js",
+              score: 100,
+              reason:
+                "implementation",
+              content:
+                "export function getFallbackRoute() { return 'fallback'; }",
+              symbols: [],
+              imports: [],
+              exports: [],
+            },
+            {
+              type: "file",
+              path:
+                "packages/providers/index.js",
+              score: 90,
+              reason:
+                "implementation",
+              content:
+                "export function createProvider() { return 'provider'; }",
+              symbols: [],
+              imports: [],
+              exports: [],
+            },
+          ];
+        },
+      },
+    };
+
+    const provider = {
+      async generate(options) {
+        const names =
+          (options.tools ?? [])
+            .map(
+              (tool) =>
+                tool.function?.name
+            )
+            .filter(Boolean);
+
+        toolNamesSeen.push(names);
+
+        return createResponse({
+          content:
+            "RAG_EVIDENCE_OK",
+        });
+      },
+    };
+
+    const tools =
+      createToolRegistry([
+        searchFilesTool,
+        readFileTool,
+      ]);
+
+    const result =
+      await execute({
+        prompt:
+          "Find the routing implementation and explain routing fallback behavior and provider selection across the codebase.",
+
+        repository,
+        provider,
+        tools,
+
+        project: {
+          root:
+            process.cwd(),
+        },
+
+        config:
+          createConfig({
+            maxAttempts: 1,
+            maxToolRounds: 5,
+          }),
+      });
+
+    assert.equal(
+      result.response.message.content,
+      "RAG_EVIDENCE_OK"
+    );
+
+    assert.equal(
+      toolNamesSeen.length,
+      1
+    );
+
+    assert.equal(
+      toolNamesSeen[0].includes(
+        "search_files"
+      ),
+      false
+    );
+
+    assert.equal(
+      toolNamesSeen[0].includes(
+        "read_file"
+      ),
+      true
+    );
+  }
+);
+test(
+  "keeps repository search available when RAG evidence is insufficient",
+  async () => {
+    const toolNamesSeen = [];
+
+    const repository = {
+      retriever: {
+        async search() {
+          return [
+            {
+              type: "file",
+              path:
+                "packages/agent/router.js",
+              score: 120,
+              reason:
+                "implementation",
+              content:
+                "export function routeRequest() { return 'openrouter'; }",
+              symbols: [],
+              imports: [],
+              exports: [],
+            },
+          ];
+        },
+      },
+    };
+
+    const provider = {
+      async generate(options) {
+        const names =
+          (options.tools ?? [])
+            .map(
+              (tool) =>
+                tool.function?.name
+            )
+            .filter(Boolean);
+
+        toolNamesSeen.push(names);
+
+        return createResponse({
+          content:
+            "SEARCH_STILL_AVAILABLE",
+        });
+      },
+    };
+
+    const tools =
+      createToolRegistry([
+        searchFilesTool,
+        readFileTool,
+      ]);
+
+    const result =
+      await execute({
+        prompt:
+          "Find the routing implementation and explain routing fallback behavior and provider selection across the codebase.",
+
+        repository,
+        provider,
+        tools,
+
+        project: {
+          root:
+            process.cwd(),
+        },
+
+        config:
+          createConfig({
+            maxAttempts: 1,
+            maxToolRounds: 5,
+          }),
+      });
+
+    assert.equal(
+      result.response.message.content,
+      "SEARCH_STILL_AVAILABLE"
+    );
+
+    assert.equal(
+      toolNamesSeen.length,
+      1
+    );
+
+    assert.equal(
+      toolNamesSeen[0].includes(
+        "search_files"
+      ),
+      true
+    );
+
+    assert.equal(
+      toolNamesSeen[0].includes(
+        "read_file"
+      ),
+      true
+    );
+  }
+);
+
+test(
+  "suppresses repository reads when RAG evidence is substantial",
+  async () => {
+    const substantialContent =
+      "implementation evidence ".repeat(
+        30
+      );
+
+    const repository =
+      createRepository({
+        results: [
+          {
+            path:
+              "packages/agent/router.js",
+            reason:
+              "implementation",
+            content:
+              substantialContent,
+          },
+          {
+            path:
+              "packages/agent/fallback.js",
+            reason:
+              "implementation",
+            content:
+              substantialContent,
+          },
+          {
+            path:
+              "packages/providers/index.js",
+            reason:
+              "implementation",
+            content:
+              substantialContent,
+          },
+        ],
+      });
+
+    const provider =
+      createProvider([
+        createResponse({
+          content:
+            "Repository explanation.",
+        }),
+      ]);
+
+    const tools =
+      createToolRegistry([
+        readFileTool,
+        searchFilesTool,
+      ]);
+
+    await execute({
+      prompt:
+        "Find the routing implementation and explain routing fallback behavior and provider selection",
+
+      repository,
+      provider,
+      tools,
+
+      project: {
+        root:
+          process.cwd(),
+      },
+
+      config:
+        createConfig({
+          maxAttempts: 1,
+        }),
+    });
+
+    assert.equal(
+      provider.calls.length,
+      1
+    );
+
+    const toolNames =
+      (
+        provider.calls[0].tools ??
+        []
+      )
+        .map(
+          (tool) =>
+            tool?.function?.name
+        )
+        .filter(Boolean);
+
+    assert.equal(
+      toolNames.includes(
+        "search_files"
+      ),
+      false
+    );
+
+    assert.equal(
+      toolNames.includes(
+        "read_file"
+      ),
+      false
+    );
+  }
+);
+
+test(
+  "keeps repository reads available when RAG excerpts are not substantial",
+  async () => {
+    const repository =
+      createRepository({
+        results: [
+          {
+            path:
+              "packages/agent/router.js",
+            reason:
+              "implementation",
+            content:
+              "short routing excerpt",
+          },
+          {
+            path:
+              "packages/agent/fallback.js",
+            reason:
+              "implementation",
+            content:
+              "short fallback excerpt",
+          },
+          {
+            path:
+              "packages/providers/index.js",
+            reason:
+              "implementation",
+            content:
+              "short provider excerpt",
+          },
+        ],
+      });
+
+    const provider =
+      createProvider([
+        createResponse({
+          content:
+            "Need repository evidence.",
+        }),
+      ]);
+
+    const tools =
+      createToolRegistry([
+        readFileTool,
+        searchFilesTool,
+      ]);
+
+    await execute({
+      prompt:
+        "Find the routing implementation and explain routing fallback behavior and provider selection",
+
+      repository,
+      provider,
+      tools,
+
+      project: {
+        root:
+          process.cwd(),
+      },
+
+      config:
+        createConfig({
+          maxAttempts: 1,
+        }),
+    });
+
+    const toolNames =
+      (
+        provider.calls[0].tools ??
+        []
+      )
+        .map(
+          (tool) =>
+            tool?.function?.name
+        )
+        .filter(Boolean);
+
+    /*
+     * Repository discovery is already
+     * covered by multiple implementation
+     * results, so search remains suppressed.
+     */
+    assert.equal(
+      toolNames.includes(
+        "search_files"
+      ),
+      false
+    );
+
+    /*
+     * The excerpts themselves are too
+     * small to replace direct file reads.
+     */
+    assert.equal(
+      toolNames.includes(
+        "read_file"
+      ),
+      true
+    );
+  }
+);
+
+test(
+  "recovers when the model requests an unregistered tool",
+  async () => {
+    let providerCalls = 0;
+let recoveryMessages = null;
+    const provider = {
+  async generate({ messages }) {
+    providerCalls += 1;
+
+    if (providerCalls === 2) {
+      recoveryMessages = messages;
+    }
+
+    if (providerCalls === 1) {
+      return createResponse({
+        content: null,
+
+        toolCalls: [
+          {
+            id: "unknown_tool_1",
+
+            type: "function",
+
+            function: {
+              name: "exec",
+
+              arguments:
+                JSON.stringify({
+                  command:
+                    "find routing implementation",
+                }),
+            },
+          },
+        ],
+      });
+    }
+
+    return createResponse({
+      content:
+        "Recovered without using the unregistered tool.",
+    });
+  },
+};
+
+    const tools =
+      createToolRegistry([
+        readFileTool,
+        searchFilesTool,
+      ]);
+
+    const events = [];
+
+    const result =
+      await execute({
+        prompt:
+          "Find the routing implementation.",
+
+        repository:
+          createRepository(),
+
+        provider,
+        tools,
+
+        project: {
+          root:
+            process.cwd(),
+        },
+
+        config:
+          createConfig({
+            maxAttempts: 1,
+          }),
+
+        onEvent(event) {
+          events.push(event);
+        },
+      });
+
+    assert.equal(
+      providerCalls,
+      2
+    );
+assert.equal(
+  result.response.message.content,
+  "Recovered without using the unregistered tool."
+);
+   const recoveryText =
+  JSON.stringify(
+    recoveryMessages
+  );
+
+assert.ok(
+  recoveryText.includes(
+    "Tool is not registered: exec"
+  )
+);
+
+assert.ok(
+  recoveryText.includes(
+    "read_file"
+  )
+);
+
+assert.ok(
+  recoveryText.includes(
+    "search_files"
+  )
+);
+
+assert.ok(
+  recoveryText.includes(
+    "Use only registered tools."
+  )
+);
+    const toolErrors =
+      events.filter(
+        (event) =>
+          event.stage === "tool" &&
+          event.type === "stage:error"
+      );
+
+    assert.ok(
+      toolErrors.some(
+        (event) =>
+          event.data?.code ===
+            "tool_not_found" ||
+          event.detail?.includes(
+            "Tool is not registered: exec"
+          )
+      )
+    );
+  }
+);
+
+test(
+  "answers directly when RAG evidence is comprehensive",
+  async () => {
+    const provider =
+      createProvider([
+        createResponse({
+          content:
+            "Routing explanation from retrieved context.",
+        }),
+      ]);
+
+    const repository =
+      createRepository({
+        results: [
+          {
+            path:
+              "packages/agent/router.js",
+            score: 120,
+            reason:
+              "implementation",
+            content:
+              "r".repeat(900),
+          },
+          {
+            path:
+              "packages/agent/fallback.js",
+            score: 110,
+            reason:
+              "implementation",
+            content:
+              "f".repeat(900),
+          },
+          {
+            path:
+              "packages/providers/index.js",
+            score: 100,
+            reason:
+              "implementation",
+            content:
+              "p".repeat(900),
+          },
+        ],
+      });
+
+    const tools =
+      createToolRegistry([
+        readFileTool,
+        searchFilesTool,
+      ]);
+
+    const result =
+      await execute({
+        prompt:
+          "Find the routing implementation and explain routing, fallback behavior, and provider selection.",
+
+        repository,
+        provider,
+        tools,
+
+        project: {
+          root:
+            process.cwd(),
+        },
+
+        config:
+          createConfig({
+            maxAttempts: 1,
+          }),
+      });
+      
+assert.equal(
+  provider.calls.length,
+  1
+);
+
+assert.deepEqual(
+  provider.calls[0].tools,
+  []
+);
+    const toolNames =
+      (
+        provider.calls[0]
+          ?.tools ?? []
+      )
+        .map(
+          (tool) =>
+            tool?.function?.name
+        );
+
+    assert.equal(
+      toolNames.includes(
+        "search_files"
+      ),
+      false
+    );
+
+    assert.equal(
+      toolNames.includes(
+        "read_file"
+      ),
+      false
+    );
+
+    assert.equal(
+      result.response.message.content,
+      "Routing explanation from retrieved context."
+    );
+  }
+);
+
+test(
+  "uses one model call and no repository tools for comprehensive architectural RAG",
+  async () => {
+    const provider =
+      createProvider([
+        createResponse({
+          content:
+            "Routing architecture explained from RAG.",
+        }),
+      ]);
+
+    const repository =
+      createRepository({
+        results: [
+          {
+            path:
+              "packages/providers/openrouter.js",
+            score: 307,
+            reason:
+              "implementation",
+            content:
+              "OpenRouter provider implementation. ".repeat(
+                100
+              ),
+          },
+          {
+            path:
+              "packages/agent/fallback.js",
+            score: 246,
+            reason:
+              "implementation",
+            content:
+              "Fallback routing implementation. ".repeat(
+                80
+              ),
+          },
+          {
+            path:
+              "packages/providers/index.js",
+            score: 358,
+            reason:
+              "implementation",
+            content:
+              "Provider registry implementation. ".repeat(
+                40
+              ),
+          },
+          {
+            path:
+              "packages/agent/router.js",
+            score: 265,
+            reason:
+              "implementation",
+            content:
+              "Request routing implementation. ".repeat(
+                70
+              ),
+          },
+          {
+            path:
+              "packages/agent/executor.js",
+            score: 384,
+            reason:
+              "implementation",
+            content:
+              "Agent execution orchestration. ".repeat(
+                100
+              ),
+          },
+        ],
+      });
+
+    const tools =
+      createToolRegistry([
+        readFileTool,
+        searchFilesTool,
+      ]);
+
+    const result =
+      await execute({
+        prompt:
+          "Find the routing implementation and explain how routing, fallback behavior, and provider selection interact across the codebase.",
+
+        repository,
+        provider,
+        tools,
+
+        project: {
+          root:
+            process.cwd(),
+        },
+
+        config:
+          createConfig({
+            maxAttempts: 1,
+          }),
+      });
+
+    /*
+     * Comprehensive architectural RAG should
+     * require exactly one model request.
+     */
+    assert.equal(
+      provider.calls.length,
+      1
+    );
+
+    const firstRequest =
+      provider.calls[0];
+
+    /*
+     * Repository tools must not be exposed
+     * when RAG already contains sufficient
+     * cross-file architectural evidence.
+     */
+    assert.deepEqual(
+      firstRequest.tools ?? [],
+      []
+    );
+
+    /*
+     * Verify that the important architectural
+     * files actually survived RAG packing and
+     * reached the model request.
+     */
+    const requestText =
+      JSON.stringify(
+        firstRequest.messages
+      );
+
+    assert.ok(
+      requestText.includes(
+        "packages/providers/openrouter.js"
+      )
+    );
+
+    assert.ok(
+      requestText.includes(
+        "packages/agent/fallback.js"
+      )
+    );
+
+    assert.ok(
+      requestText.includes(
+        "packages/providers/index.js"
+      )
+    );
+
+    assert.ok(
+      requestText.includes(
+        "packages/agent/router.js"
+      )
+    );
+
+    assert.ok(
+      requestText.includes(
+        "packages/agent/executor.js"
+      )
+    );
+
+    assert.equal(
+      result.response.message.content,
+      "Routing architecture explained from RAG."
     );
   }
 );

@@ -34,6 +34,75 @@ function getAvailableTools(tools) {
 
   return tools.describe();
 }
+function getRepositoryToolPolicy(
+  rag
+) {
+  if (
+    !rag?.enabled ||
+    !Array.isArray(rag.results)
+  ) {
+    return {
+      suppressSearch: false,
+      suppressRead: false,
+      evidenceLevel: "none",
+    };
+  }
+
+  const implementationResults =
+    rag.results.filter(
+      (result) =>
+        result?.reason ===
+          "implementation" &&
+        typeof result?.content ===
+          "string" &&
+        result.content.trim().length >
+          0
+    );
+
+  const substantialResults =
+    implementationResults.filter(
+      (result) =>
+        result.content.trim().length >=
+          500
+    );
+
+  const totalImplementationChars =
+    implementationResults.reduce(
+      (total, result) =>
+        total +
+        result.content.trim().length,
+      0
+    );
+
+  const utilization =
+    rag?.stats?.utilization ?? 0;
+
+  const strongEvidence =
+    implementationResults.length >= 2;
+
+  const comprehensiveEvidence =
+    substantialResults.length >= 3 ||
+    (
+      implementationResults.length >= 3 &&
+      totalImplementationChars >= 2500 &&
+      utilization >= 0.5
+    );
+
+  return {
+    suppressSearch:
+      strongEvidence,
+
+    suppressRead:
+      comprehensiveEvidence,
+
+    evidenceLevel:
+      comprehensiveEvidence
+        ? "comprehensive"
+        : strongEvidence
+          ? "strong"
+          : "weak",
+  };
+}
 
 function normalizeUsage(usage = {}) {
   const promptTokens =
@@ -691,10 +760,6 @@ export async function execute({
       ),
     },
   });
-  const modelTools =
-    createOpenRouterTools(
-      availableTools
-    );
   // 1. Detect intent
   emit({
     type: "stage:start",
@@ -783,7 +848,47 @@ export async function execute({
       },
     });
   }
+const repositoryToolPolicy =
+  getRepositoryToolPolicy(
+    rag
+  );
 
+const shouldAnswerFromRAG =
+  repositoryToolPolicy
+    .evidenceLevel ===
+  "comprehensive";
+
+const modelAvailableTools =
+  shouldAnswerFromRAG
+    ? []
+    : availableTools.filter(
+        (tool) => {
+          if (
+            repositoryToolPolicy
+              .suppressSearch &&
+            tool.name ===
+              "search_files"
+          ) {
+            return false;
+          }
+
+          if (
+            repositoryToolPolicy
+              .suppressRead &&
+            tool.name ===
+              "read_file"
+          ) {
+            return false;
+          }
+
+          return true;
+        }
+      );
+
+const modelTools =
+  createOpenRouterTools(
+    modelAvailableTools
+  );
   // 4. Build model context
   emit({
     type: "stage:start",
@@ -888,8 +993,18 @@ export async function execute({
   const maxAttempts =
     config.maxAttempts ?? 3;
 
-  const maxToolRounds =
-    config.maxToolRounds ?? 10;
+  const configuredMaxToolRounds =
+  config.maxToolRounds ?? 10;
+
+const maxToolRounds =
+  repositoryToolPolicy
+    .evidenceLevel ===
+      "comprehensive"
+    ? Math.min(
+        configuredMaxToolRounds,
+        3
+      )
+    : configuredMaxToolRounds;
   const maxToolProtocolErrors = 2;
 
   const messages = [];
@@ -1042,15 +1157,24 @@ export async function execute({
 
               emit,
             });
-        } catch (error) {
+               } catch (error) {
+          const recoverableToolErrors =
+            new Set([
+              "invalid_tool_arguments",
+              "invalid_tool_call",
+              "invalid_tool_name",
+              "invalid_tool_calls",
+              "tool_not_found",
+            ]);
+
           const recoverable =
-            error?.code ===
-            "invalid_tool_arguments";
+            recoverableToolErrors.has(
+              error?.code
+            );
 
           if (!recoverable) {
             throw error;
           }
-
           toolProtocolErrors += 1;
 
           if (

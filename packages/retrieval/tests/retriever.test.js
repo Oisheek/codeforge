@@ -294,3 +294,392 @@ test(
         );
     }
 );
+
+test(
+    "prefers implementation files over tests for implementation queries",
+    () => {
+        const retriever =
+            createRetriever(
+                createMockIndexes([
+                    createFile({
+                        path:
+                            "packages/agent/router.js",
+                        source: `
+                            export function routeRequest() {
+                                return selectProvider();
+                            }
+
+                            function selectProvider() {
+                                return "openrouter";
+                            }
+                        `,
+                    }),
+
+                    createFile({
+                        path:
+                            "packages/agent/fallback.js",
+                        source: `
+                            export function getFallbackRoute() {
+                                return "fallback provider";
+                            }
+                        `,
+                    }),
+
+                    createFile({
+                        path:
+                            "packages/providers/index.js",
+                        source: `
+                            export function createProvider() {
+                                return "provider selection";
+                            }
+                        `,
+                    }),
+
+                    createFile({
+                        path:
+                            "packages/agent/tests/executor.test.js",
+                        source: `
+                            routing routing routing routing
+                            fallback fallback fallback fallback
+                            provider provider provider provider
+                            selection selection selection
+                        `,
+                    }),
+                ])
+            );
+
+        const results =
+            retriever.search(
+                "Find the routing implementation and explain routing fallback behavior and provider selection",
+                {
+                    limit: 4,
+                }
+            );
+
+        const paths =
+            results.map(
+                (result) =>
+                    result.path
+            );
+
+  const implementationPaths = [
+    "packages/agent/router.js",
+    "packages/agent/fallback.js",
+    "packages/providers/index.js",
+];
+
+for (const implementationPath of implementationPaths) {
+    assert.ok(
+        paths.includes(
+            implementationPath
+        ),
+        `Expected ${implementationPath} to be retrieved`
+    );
+}
+
+const testIndex =
+    paths.indexOf(
+        "packages/agent/tests/executor.test.js"
+    );
+
+if (testIndex !== -1) {
+    for (const implementationPath of implementationPaths) {
+        assert.ok(
+            paths.indexOf(
+                implementationPath
+            ) < testIndex,
+            `Expected ${implementationPath} to rank above the test file`
+        );
+    }
+}
+    }
+);
+
+test(
+    "does not penalize test files when the query explicitly asks for tests",
+    () => {
+        const retriever =
+            createRetriever(
+                createMockIndexes([
+                    createFile({
+                        path:
+                            "packages/agent/executor.js",
+                        source: `
+                            fallback provider routing
+                        `,
+                    }),
+
+                    createFile({
+                        path:
+                            "packages/agent/tests/executor.test.js",
+                        source: `
+                            executor fallback tests
+                            provider fallback test
+                            routing test
+                        `,
+                    }),
+                ])
+            );
+
+        const results =
+            retriever.search(
+                "Find the executor fallback tests",
+                {
+                    limit: 2,
+                }
+            );
+
+        assert.equal(
+            results[0].path,
+            "packages/agent/tests/executor.test.js"
+        );
+    }
+);
+
+test(
+    "expands routing and selection terminology for code identifiers",
+    () => {
+        const retriever =
+            createRetriever(
+                createMockIndexes([
+                    createFile({
+                        path:
+                            "packages/agent/router.js",
+                        source: `
+                            export function routeRequest() {
+                                return selectProvider();
+                            }
+
+                            function selectProvider() {
+                                return "openrouter";
+                            }
+                        `,
+                    }),
+
+                    createFile({
+                        path:
+                            "packages/unrelated/logger.js",
+                        source: `
+                            export function writeLog() {
+                                return "log";
+                            }
+                        `,
+                    }),
+                ])
+            );
+
+        const results =
+            retriever.search(
+                "Explain routing and provider selection",
+                {
+                    limit: 4,
+                }
+            );
+
+        const paths =
+            results.map(
+                (result) =>
+                    result.path
+            );
+
+        assert.ok(
+            paths.includes(
+                "packages/agent/router.js"
+            )
+        );
+
+        assert.equal(
+            paths[0],
+            "packages/agent/router.js"
+        );
+    }
+);
+
+test(
+    "retrieves the complete routing architecture for a cross-file implementation query",
+    () => {
+        const retriever =
+            createRetriever(
+                createMockIndexes([
+                    createFile({
+                        path:
+                            "packages/agent/router.js",
+                        source: `
+                            export function routeRequest({
+                                plan,
+                                config,
+                                providers,
+                            }) {
+                                const provider =
+                                    config.provider;
+
+                                return {
+                                    provider,
+                                    model:
+                                        selectModel(
+                                            plan,
+                                            config.models
+                                        ),
+                                };
+                            }
+
+                            function selectModel(
+                                plan,
+                                models
+                            ) {
+                                return models.general;
+                            }
+                        `,
+                    }),
+
+                    createFile({
+                        path:
+                            "packages/agent/fallback.js",
+                        source: `
+                            export function getFallbackRoute({
+                                error,
+                                route,
+                                providers,
+                                models,
+                            }) {
+                                if (!isRetryable(error)) {
+                                    return null;
+                                }
+
+                                return findNextModel(
+                                    route,
+                                    models,
+                                    providers
+                                );
+                            }
+
+                            function findNextModel(
+                                route,
+                                models
+                            ) {
+                                return (
+                                    models.fallback ??
+                                    models.emergency
+                                );
+                            }
+                        `,
+                    }),
+
+                    createFile({
+                        path:
+                            "packages/agent/executor.js",
+                        source: `
+                            import {
+                                routeRequest,
+                            } from "./router.js";
+
+                            import {
+                                getFallbackRoute,
+                            } from "./fallback.js";
+
+                            export async function execute({
+                                provider,
+                                providers,
+                                config,
+                            }) {
+                                let route =
+                                    routeRequest({
+                                        config,
+                                        providers,
+                                    });
+
+                                try {
+                                    return await provider.generate({
+                                        model:
+                                            route.model,
+                                    });
+                                } catch (error) {
+                                    route =
+                                        getFallbackRoute({
+                                            error,
+                                            route,
+                                            providers,
+                                            models:
+                                                config.models,
+                                        });
+                                }
+                            }
+                        `,
+                    }),
+
+                    createFile({
+                        path:
+                            "packages/providers/index.js",
+                        source: `
+                            export function createProvider(
+                                name,
+                                config
+                            ) {
+                                return PROVIDERS.get(
+                                    name
+                                )(config);
+                            }
+
+                            export function registerProvider(
+                                name,
+                                factory
+                            ) {
+                                PROVIDERS.set(
+                                    name,
+                                    factory
+                                );
+                            }
+                        `,
+                    }),
+
+                    createFile({
+                        path:
+                            "apps/cli/src/dev/provider.js",
+                        source: `
+                            export async function testProvider(
+                                provider
+                            ) {
+                                return provider.chat();
+                            }
+                        `,
+                    }),
+
+                    createFile({
+                        path:
+                            "packages/retrieval/retriever.js",
+                        source: `
+                            export class Retriever {
+                                search(query) {
+                                    return [];
+                                }
+                            }
+                        `,
+                    }),
+                ])
+            );
+
+        const results =
+            retriever.search(
+                "Find the routing implementation and explain how routing, fallback behavior, and provider selection interact across the codebase.",
+                {
+                    limit: 4,
+                }
+            );
+
+        const paths =
+            results.map(
+                (result) =>
+                    result.path
+            );
+
+        assert.deepEqual(
+            new Set(paths),
+            new Set([
+                "packages/agent/router.js",
+                "packages/agent/fallback.js",
+                "packages/agent/executor.js",
+                "packages/providers/index.js",
+            ])
+        );
+    }
+);

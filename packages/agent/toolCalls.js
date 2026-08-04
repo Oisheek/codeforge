@@ -156,15 +156,30 @@ export function resolveToolCalls(
         );
 
       if (!tool) {
-        throw createToolCallError(
-          "tool_not_found",
-          `Tool is not registered: ${toolCall.name}`,
-          {
-            tool:
-              toolCall.name,
-          }
-        );
-      }
+  const availableTools =
+    typeof registry.describe === "function"
+      ? registry
+          .describe()
+          .map((item) => item?.name)
+          .filter(Boolean)
+      : [];
+
+  const availableToolText =
+    availableTools.length > 0
+      ? ` Available tools: ${availableTools.join(", ")}.`
+      : "";
+
+  throw createToolCallError(
+    "tool_not_found",
+    `Tool is not registered: ${toolCall.name}.${availableToolText} Use only registered tools.`,
+    {
+      tool:
+        toolCall.name,
+
+      availableTools,
+    }
+  );
+}
 
       return {
         ...toolCall,

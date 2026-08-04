@@ -238,3 +238,125 @@ test(
     );
   }
 );
+
+test(
+  "uses available budget instead of capping every excerpt at 1600 characters",
+  async () => {
+    const repository =
+      createRepository([
+        {
+          path: "router.js",
+          score: 100,
+          reason: "implementation",
+          content:
+            "r".repeat(2400),
+          symbols: [],
+          imports: [],
+          exports: [],
+        },
+
+        {
+          path: "fallback.js",
+          score: 90,
+          reason: "implementation",
+          content:
+            "f".repeat(2400),
+          symbols: [],
+          imports: [],
+          exports: [],
+        },
+      ]);
+
+    const rag =
+      await retrieveContext({
+        repository,
+        plan: ragPlan,
+        query: "routing fallback",
+        options: {
+          tokenBudget: 6000,
+        },
+      });
+
+    assert.equal(
+      rag.results.length,
+      2
+    );
+
+    assert.ok(
+      rag.results.every(
+        (result) =>
+          result.content.length >
+          1600
+      )
+    );
+
+    assert.ok(
+      rag.stats.estimatedTokens <=
+        rag.stats.tokenBudget
+    );
+  }
+);
+
+test(
+  "preserves evidence from the end when shrinking a retrieval excerpt",
+  async () => {
+    const importantEvidence =
+      "function findNextModel()";
+
+    const repository =
+      createRepository([
+        {
+          path: "fallback.js",
+          score: 100,
+          reason: "implementation",
+          content:
+            "a".repeat(1800) +
+            importantEvidence,
+          symbols: [],
+          imports: [],
+          exports: [],
+        },
+
+        {
+          path: "router.js",
+          score: 90,
+          reason: "implementation",
+          content:
+            "b".repeat(1800),
+          symbols: [],
+          imports: [],
+          exports: [],
+        },
+      ]);
+
+    const rag =
+      await retrieveContext({
+        repository,
+        plan: ragPlan,
+        query: "routing fallback",
+        options: {
+          tokenBudget: 900,
+        },
+      });
+
+    const fallback =
+      rag.results.find(
+        (result) =>
+          result.path ===
+          "fallback.js"
+      );
+
+    assert.ok(fallback);
+
+    assert.ok(
+      fallback.content.includes(
+        importantEvidence
+      )
+    );
+
+    assert.ok(
+      rag.stats.estimatedTokens <=
+        rag.stats.tokenBudget
+    );
+  }
+);

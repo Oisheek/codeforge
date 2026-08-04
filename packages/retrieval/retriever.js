@@ -52,7 +52,7 @@ function normalize(value) {
 
 function tokenize(query) {
     return normalize(query)
-        .split(/[^a-z0-9_$.-]+/i)
+        .split(/[^a-z0-9_$-]+/i)
         .map((token) => token.trim())
         .filter(Boolean);
 }
@@ -69,6 +69,94 @@ function getSearchTerms(query) {
         : tokens;
 }
 
+const TERM_ALIASES = Object.freeze({
+    routing: [
+        "route",
+        "router",
+        "routing",
+    ],
+
+    route: [
+        "route",
+        "router",
+        "routing",
+    ],
+
+    router: [
+        "route",
+        "router",
+        "routing",
+    ],
+
+    selection: [
+        "select",
+        "selection",
+        "selector",
+    ],
+
+    selecting: [
+        "select",
+        "selection",
+        "selector",
+    ],
+
+    provider: [
+        "provider",
+        "providers",
+    ],
+
+    providers: [
+        "provider",
+        "providers",
+    ],
+
+    fallback: [
+        "fallback",
+        "failover",
+    ],
+
+    configuration: [
+        "config",
+        "configure",
+        "configuration",
+    ],
+
+    configure: [
+        "config",
+        "configure",
+        "configuration",
+    ],
+
+    authentication: [
+        "auth",
+        "authenticate",
+        "authentication",
+    ],
+
+    authenticate: [
+        "auth",
+        "authenticate",
+        "authentication",
+    ],
+});
+
+function expandSearchTerms(terms) {
+    const expanded = new Set();
+
+    for (const term of terms) {
+        expanded.add(term);
+
+        for (
+            const alias of
+            TERM_ALIASES[term] ?? []
+        ) {
+            expanded.add(alias);
+        }
+    }
+
+    return [...expanded];
+}
+
 function isRepositoryScopeQuery(query) {
     const tokens = tokenize(query);
 
@@ -77,6 +165,115 @@ function isRepositoryScopeQuery(query) {
     );
 }
 
+const TEST_QUERY_TERMS = new Set([
+    "test",
+    "tests",
+    "testing",
+    "spec",
+    "specs",
+]);
+
+const IMPLEMENTATION_QUERY_TERMS =
+    new Set([
+        "implementation",
+        "implement",
+        "source",
+        "logic",
+        "behavior",
+        "behaviour",
+    ]);
+
+function isTestFile(file) {
+    const fileName =
+        normalize(file?.name);
+
+    const filePath =
+        normalize(file?.path);
+
+    return (
+        filePath.includes("/tests/") ||
+        filePath.includes("\\tests\\") ||
+        filePath.includes("/test/") ||
+        filePath.includes("\\test\\") ||
+        fileName.endsWith(".test.js") ||
+        fileName.endsWith(".test.ts") ||
+        fileName.endsWith(".spec.js") ||
+        fileName.endsWith(".spec.ts")
+    );
+}
+
+function getQueryPurpose(query) {
+    const tokens = tokenize(query);
+
+    if (
+        tokens.some((token) =>
+            TEST_QUERY_TERMS.has(token)
+        )
+    ) {
+        return "test";
+    }
+
+    if (
+        tokens.some((token) =>
+            IMPLEMENTATION_QUERY_TERMS.has(
+                token
+            )
+        )
+    ) {
+        return "implementation";
+    }
+
+    return "general";
+}
+
+function purposeScore(
+    file,
+    queryPurpose
+) {
+    const testFile =
+        isTestFile(file);
+
+    if (queryPurpose === "test") {
+        return testFile
+            ? 60
+            : 0;
+    }
+
+    if (
+        queryPurpose ===
+        "implementation"
+    ) {
+        return testFile
+            ? -60
+            : 20;
+    }
+
+    return 0;
+}
+function purposeRank(
+    file,
+    queryPurpose
+) {
+    const testFile =
+        isTestFile(file);
+
+    if (
+        queryPurpose ===
+        "implementation"
+    ) {
+        return testFile
+            ? 1
+            : 0;
+    }
+
+    if (queryPurpose === "test") {
+        return testFile
+            ? 0
+            : 1;
+    }
+
+    return 0;
+}
 function countOccurrences(text, term) {
     if (!text || !term) {
         return 0;
@@ -230,6 +427,8 @@ function fileMatches(file, terms) {
     return score;
 }
 
+
+
 function architecturalScore(file) {
     const fileName = normalize(file?.name);
     const filePath = normalize(file?.path);
@@ -299,6 +498,127 @@ function architecturalScore(file) {
     );
 
     return score;
+}
+
+function diversifyArchitecturalResults(
+    results,
+    query
+) {
+    const tokens =
+        new Set(tokenize(query));
+
+    const concepts = [];
+
+    if (
+        tokens.has("routing") ||
+        tokens.has("route") ||
+        tokens.has("router")
+    ) {
+        concepts.push([
+            "routing",
+            "route",
+            "router",
+        ]);
+    }
+
+    if (
+        tokens.has("fallback") ||
+        tokens.has("failover")
+    ) {
+        concepts.push([
+            "fallback",
+            "failover",
+        ]);
+    }
+
+    if (
+        tokens.has("provider") ||
+        tokens.has("providers")
+    ) {
+        concepts.push([
+            "provider",
+            "providers",
+        ]);
+    }
+
+    if (concepts.length < 2) {
+        return results;
+    }
+
+    /*
+     * Architectural diversification should ensure
+     * concept coverage without replacing the normal
+     * relevance ranking.
+     *
+     * First identify the strongest result for each
+     * requested architectural concept.
+     */
+    const requiredPaths =
+        new Set();
+
+    for (const concept of concepts) {
+        const candidates =
+            results.filter(
+                (result) => {
+                    const name =
+                        normalize(
+                            result?.name
+                        );
+
+                    const path =
+                        normalize(
+                            result?.path
+                        );
+
+                    return concept.some(
+                        (term) =>
+                            name.includes(
+                                term
+                            ) ||
+                            path.includes(
+                                term
+                            )
+                    );
+                }
+            );
+
+        if (candidates.length === 0) {
+            continue;
+        }
+
+        /*
+         * Results have already been sorted by
+         * purpose rank and relevance score.
+         * Therefore the first matching candidate is
+         * the strongest representative.
+         */
+        requiredPaths.add(
+            candidates[0].path
+        );
+    }
+
+    if (requiredPaths.size === 0) {
+        return results;
+    }
+
+    /*
+     * Preserve the original relevance ordering.
+     *
+     * Diversification is a coverage constraint,
+     * not a second ranking algorithm. Required
+     * architectural files therefore remain in
+     * their natural ranked positions.
+     */
+    return results.map(
+        (result) => ({
+            ...result,
+
+            architecturalRequired:
+                requiredPaths.has(
+                    result.path
+                ),
+        })
+    );
 }
 
 function createFileResult({
@@ -462,14 +782,18 @@ export class Retriever {
             return [];
         }
 
-        const terms = getSearchTerms(query);
-
+const terms = expandSearchTerms(
+    getSearchTerms(query)
+);
         if (terms.length === 0) {
             return [];
         }
 
-        const repositoryScope =
+           const repositoryScope =
             isRepositoryScopeQuery(query);
+
+        const queryPurpose =
+            getQueryPurpose(query);
 
         const scored = [];
 
@@ -481,13 +805,31 @@ export class Retriever {
 
             let reason = "lexical";
 
+            const purposeAdjustment =
+                purposeScore(
+                    file,
+                    queryPurpose
+                );
+
+            score += purposeAdjustment;
+
+            if (purposeAdjustment !== 0) {
+                reason =
+                    queryPurpose === "test"
+                        ? "test"
+                        : "implementation";
+            }
+
             if (repositoryScope) {
                 const architecture =
                     architecturalScore(file);
 
                 score += architecture;
 
-                if (architecture > 0) {
+                if (
+                    architecture > 0 &&
+                    purposeAdjustment === 0
+                ) {
                     reason = "architecture";
                 }
             }
@@ -496,31 +838,55 @@ export class Retriever {
                 continue;
             }
 
-            scored.push(
-                createFileResult({
-                    file,
-                    score,
-                    terms,
-                    maxSourceLength,
-                    reason,
-                })
-            );
+            const result =
+    createFileResult({
+        file,
+        score,
+        terms,
+        maxSourceLength,
+        reason,
+    });
+
+result.purposeRank =
+    purposeRank(
+        file,
+        queryPurpose
+    );
+
+scored.push(result);
         }
 
-        scored.sort((a, b) => {
-            if (b.score !== a.score) {
-                return b.score - a.score;
-            }
-
-            return String(a.path).localeCompare(
-                String(b.path)
-            );
-        });
-
-        return scored.slice(
-            0,
-            Math.max(1, limit)
+     scored.sort((a, b) => {
+    if (
+        a.purposeRank !==
+        b.purposeRank
+    ) {
+        return (
+            a.purposeRank -
+            b.purposeRank
         );
+    }
+
+    if (b.score !== a.score) {
+        return b.score - a.score;
+    }
+
+    return String(a.path).localeCompare(
+        String(b.path)
+    );
+});
+        const diversified =
+    repositoryScope
+        ? diversifyArchitecturalResults(
+              scored,
+              query
+          )
+        : scored;
+
+return diversified.slice(
+    0,
+    Math.max(1, limit)
+);
     }
 
     /**
