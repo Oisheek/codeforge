@@ -26,6 +26,58 @@ const CROSS_FILE_PATTERNS = [
   /\b(find|search|locate|discover)\b/i,
 ];
 
+const PROJECT_REFERENCE_PATTERNS = [
+  /*
+   * Explicit repository scope.
+   */
+  /\b(repository|repo|codebase|project[- ]wide|repository[- ]wide)\b/i,
+
+  /*
+   * Direct references to the current project.
+   *
+   * Examples:
+   *   "our system"
+   *   "this project"
+   *   "current codebase"
+   */
+  /\b(?:our|this|current)\s+(?:system|project|codebase|repository|repo|implementation|architecture)\b/i,
+
+  /*
+   * References to CodeForge subsystems/components.
+   *
+   * Examples:
+   *   "our routing system"
+   *   "our fallback"
+   *   "this executor"
+   */
+  /\b(?:our|this|current)\s+(?:routing(?:\s+system)?|router|fallback|provider|executor|retrieval|rag|planner|agent|terminal|cli|tooling|tools?)\b/i,
+
+  /*
+   * Repository implementation terminology.
+   */
+  /\b(?:implementation|implemented|source code)\b/i,
+
+  /*
+   * Source-code relationships.
+   */
+  /\b(?:imports|importers|exports|dependencies|dependents|references|usages|callers|callees)\b/i,
+];
+
+function referencesProjectImplementation(
+  prompt = ""
+) {
+  if (typeof prompt !== "string") {
+    return false;
+  }
+
+  return PROJECT_REFERENCE_PATTERNS.some(
+    (pattern) =>
+      pattern.test(prompt)
+  );
+}
+
+
+
 function getExplicitFileTargets(
   prompt = ""
 ) {
@@ -77,36 +129,92 @@ function applyRetrievalPolicy(
       prompt
     );
 
-  const directFileTarget =
-    fileTargets.length === 1 &&
-    !requiresCrossFileContext(
+  const crossFileContext =
+    requiresCrossFileContext(
       prompt
     );
+    
+const projectReference =
+  referencesProjectImplementation(
+    prompt
+  );
 
-  if (!directFileTarget) {
+  const directFileTarget =
+    fileTargets.length === 1 &&
+    !crossFileContext;
+
+  /*
+   * A direct file request is better served by
+   * repository tools than broad RAG retrieval.
+   */
+  if (directFileTarget) {
     return {
       ...plan,
+
+      requiresRAG: false,
+      requiresTools: true,
+
+      directFileTarget: true,
+      fileTargets,
+
+      steps:
+        plan.steps
+          .filter(
+            (step) =>
+              step !== "retrieve"
+          )
+          .includes("tool")
+            ? plan.steps.filter(
+                (step) =>
+                  step !== "retrieve"
+              )
+            : [
+                "tool",
+                ...plan.steps.filter(
+                  (step) =>
+                    step !== "retrieve"
+                ),
+              ],
+    };
+  }
+
+  /*
+   * EXPLAIN is repository-independent by
+   * default.
+   *
+   * Only enable RAG when the actual prompt
+   * refers to the current repository/codebase.
+   */
+  if (
+  plan.intent ===
+    Intent.EXPLAIN &&
+  projectReference
+) {
+    return {
+      ...plan,
+
+      requiresRAG: true,
+
       directFileTarget: false,
       fileTargets,
+
+      steps: [
+        "retrieve",
+        ...plan.steps.filter(
+          (step) =>
+            step !== "retrieve"
+        ),
+      ],
     };
   }
 
   return {
     ...plan,
-
-    requiresRAG: false,
-    requiresTools: true,
-
-    directFileTarget: true,
+    directFileTarget: false,
     fileTargets,
-
-    steps:
-      plan.steps.filter(
-        (step) =>
-          step !== "retrieve"
-      ),
   };
 }
+
 function createPlan(intent) {
   switch (intent) {
     case Intent.CHAT:
@@ -121,17 +229,15 @@ function createPlan(intent) {
       };
 
     case Intent.EXPLAIN:
-      return {
-        ...DEFAULT_PLAN,
-        intent,
-        requiresRAG: true,
-        steps: [
-          "retrieve",
-          "context",
-          "route",
-          "generate",
-        ],
-      };
+  return {
+    ...DEFAULT_PLAN,
+    intent,
+    steps: [
+      "context",
+      "route",
+      "generate",
+    ],
+  };
 
     case Intent.PLAN:
       return {
