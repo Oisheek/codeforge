@@ -79,9 +79,14 @@ function resolveModel(
   return defaultValue;
 }
 
- const finalConfig = {
+const finalConfig = {
   ...defaultConfig,
   ...config,
+
+  selectors: {
+    ...defaultConfig.selectors,
+    ...(config.selectors ?? {}),
+  },
 
   // Runtime values from environment
   apiKey: process.env.OPENROUTER_API_KEY,

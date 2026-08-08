@@ -11,6 +11,13 @@ function resolveModelRole(plan) {
     return "general";
   }
 
+  if (
+    typeof plan.modelRole === "string" &&
+    plan.modelRole.trim()
+  ) {
+    return plan.modelRole.trim();
+  }
+
   if (plan.requiresThinking) {
     return "planner";
   }

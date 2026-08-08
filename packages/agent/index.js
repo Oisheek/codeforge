@@ -13,3 +13,14 @@ export { configureThinking } from "./thinking.js";
 export { getFallbackRoute } from "./fallback.js";
 
 export { execute } from "./executor.js";
+
+export {
+  createModelSelector,
+  MODEL_ROLES,
+  COMPLEXITIES,
+} from "./modelSelector.js";
+
+export {
+  createRagSelector,
+  RAG_SCOPES,
+} from "./ragSelector.js";

@@ -17,6 +17,14 @@ import {
   resolveToolCalls,
 } from "./toolCalls.js";
 
+import {
+  createModelSelector,
+} from "./modelSelector.js";
+
+import {
+  createRagSelector,
+} from "./ragSelector.js";
+
 
 function getAvailableTools(tools) {
   if (!tools) {
@@ -800,22 +808,156 @@ export async function execute({
       ? plan.steps.join(" → ")
       : "Plan ready",
   });
+// 3. Decide whether repository context is required
+emit({
+  type: "stage:start",
+  stage: "rag_select",
+  detail: "Deciding whether repository context is needed",
+});
 
+const selectorProvider =
+  config.selectors?.provider
+    ? providers.find(
+        (item) =>
+          item?.name ===
+          config.selectors.provider
+      )?.provider ?? null
+    : provider;
+
+const ragSelector =
+  createRagSelector({
+    provider:
+      selectorProvider ?? provider,
+
+    model:
+      config.selectors?.rag ?? null,
+
+    maxTokens:
+      config.selectors?.maxTokens ?? 128,
+  });
+
+const ragDecision =
+  await ragSelector.select({
+    prompt,
+    plan,
+  });
+
+emit({
+  type: "stage:success",
+  stage: "rag_select",
+  detail:
+    ragDecision.required
+      ? `Required · ${ragDecision.scope}`
+      : "Not required",
+  data: ragDecision,
+});
+emit({
+  type: "stage:start",
+  stage: "model_select",
+  detail: "Selecting model role",
+});
+
+const modelSelector =
+  createModelSelector({
+    provider,
+
+    model:
+      config.selectors?.model ?? null,
+
+    maxTokens:
+      config.selectors?.modelMaxTokens ?? 256,
+  });
+
+const modelDecision =
+  await modelSelector.select({
+    prompt,
+    intent,
+    plan,
+    ragDecision,
+
+    availableRoles:
+      Object.keys(
+        config.models ?? {}
+      ).filter(
+        (role) =>
+          ![
+            "fallback",
+            "emergency",
+          ].includes(role)
+      ),
+  });
+
+emit({
+  type: "stage:success",
+  stage: "model_select",
+  detail:
+    `${modelDecision.role} · ${Math.round(
+      modelDecision.confidence * 100
+    )}%`,
+  data: modelDecision,
+});
+const effectivePlan = {
+  ...plan,
+
+requiresRAG:
+    ragDecision.required &&
+    !plan.directFileTarget,
+
+  ragScope:
+    ragDecision.scope,
+
+  requiresThinking:
+    modelDecision.reasoningRequired ||
+    plan.requiresThinking,
+
+  requiresTools:
+    modelDecision.toolRequired ||
+    plan.requiresTools,
+
+  modelRole:
+    modelDecision.role,
+
+  modelDecision,
+  ragDecision,
+};
+
+console.log("[DEBUG RAG]", {
+  plannerRequiresRAG: plan.requiresRAG,
+  ragDecision,
+  effectiveRequiresRAG: effectivePlan.requiresRAG,
+  ragScope: effectivePlan.ragScope,
+  directFileTarget: plan.directFileTarget,
+});
   // 3. Retrieve repository context
-  if (plan?.requiresRAG) {
-    emit({
+if (effectivePlan?.requiresRAG) {
+      emit({
       type: "stage:start",
       stage: "retrieve",
       detail: "Searching repository context",
     });
   }
 
-  const rag =
+  let rag = {
+  enabled: false,
+  results: [],
+  stats: {
+    retrieved: 0,
+    selected: 0,
+    estimatedTokens: 0,
+    tokenBudget: 0,
+    remainingTokens: 0,
+    utilization: 0,
+  },
+};
+
+if (effectivePlan.requiresRAG) {
+  rag =
     await retrieveContext({
       repository,
-      plan,
+      plan: effectivePlan,
       query: prompt,
     });
+}
 
   const retrievalCount =
     rag?.results?.length ??
@@ -832,8 +974,8 @@ export async function execute({
         result.path
     );
 
-  if (plan?.requiresRAG) {
-    emit({
+if (effectivePlan?.requiresRAG) {
+      emit({
       type: "stage:success",
       stage: "retrieve",
       detail:
@@ -898,7 +1040,7 @@ const modelTools =
 
   const context = buildContext({
     prompt,
-    plan,
+    plan: effectivePlan,
     project,
     git,
     memory,
@@ -920,7 +1062,7 @@ const modelTools =
   });
 
   let route = routeRequest({
-    plan,
+    plan: effectivePlan,
     config,
     providers,
   });
@@ -957,7 +1099,7 @@ const modelTools =
   });
 
   const thinking = configureThinking({
-    plan,
+    plan: effectivePlan,
     route,
   });
 

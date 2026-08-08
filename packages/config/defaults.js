@@ -2,9 +2,9 @@ export const defaultConfig = {
   provider: "openrouter",
 
   models: {
-    fast: "inclusionai/ling-3.0-flash:free",
+    fast: "google/gemma-4-26b-a4b-it:free",
 
-    general: "inclusionai/ling-3.0-flash:free",
+    general: "google/gemma-4-26b-a4b-it:free",
 
     coding: "cohere/north-mini-code:free",
 
@@ -33,6 +33,18 @@ export const defaultConfig = {
 
     emergency:
       "openrouter/free",
+  },
+
+  selectors: {
+    provider: "openrouter",
+
+    rag: "nvidia/nemotron-3-embed-1b:free",
+
+    model: "google/gemma-4-26b-a4b-it:free",
+
+    maxTokens: 128,
+
+    modelMaxTokens: 256,
   },
 
   temperature: 0.2,
