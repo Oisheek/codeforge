@@ -61,3 +61,29 @@ test("uses the selected role even when it differs from the detected intent", () 
   assert.equal(route.modelRole, "fast");
   assert.equal(route.model, "fast-model");
 });
+
+test("rejects an unknown selected model role", () => {
+  const route = routeRequest({
+    plan: {
+      intent: "code",
+      modelRole: "unknownRole",
+      requiresThinking: false,
+    },
+    config: {
+      models: {
+        coding: "coding-model",
+        fallback: "fallback-model",
+      },
+    },
+  });
+
+  assert.equal(
+    route.modelRole,
+    "coding"
+  );
+
+  assert.equal(
+    route.model,
+    "coding-model"
+  );
+});

@@ -40,6 +40,127 @@ function ensureSessionFile() {
   }
 }
 
+export function validateConfig(config) {
+  if (
+    !config ||
+    typeof config !== "object" ||
+    Array.isArray(config)
+  ) {
+    throw new TypeError(
+      "Configuration must be an object."
+    );
+  }
+
+  if (
+    typeof config.provider !== "string" ||
+    config.provider.trim().length === 0
+  ) {
+    throw new TypeError(
+      "Configuration provider must be a non-empty string."
+    );
+  }
+
+  const modelRoles = [
+    "fast",
+    "general",
+    "coding",
+    "heavyCoding",
+    "planner",
+    "subagent",
+    "vision",
+    "documentVision",
+    "embedding",
+    "reranker",
+    "fallback",
+    "emergency",
+  ];
+
+  if (
+    !config.models ||
+    typeof config.models !== "object" ||
+    Array.isArray(config.models)
+  ) {
+    throw new TypeError(
+      "Configuration models must be an object."
+    );
+  }
+
+  for (const role of modelRoles) {
+    if (
+      typeof config.models[role] !== "string" ||
+      config.models[role].trim().length === 0
+    ) {
+      throw new TypeError(
+        `Configuration model "${role}" must be a non-empty string.`
+      );
+    }
+  }
+
+  if (
+    !config.selectors ||
+    typeof config.selectors !== "object" ||
+    Array.isArray(config.selectors)
+  ) {
+    throw new TypeError(
+      "Configuration selectors must be an object."
+    );
+  }
+
+  if (
+    typeof config.selectors.provider !== "string" ||
+    config.selectors.provider.trim().length === 0
+  ) {
+    throw new TypeError(
+      "Configuration selector provider must be a non-empty string."
+    );
+  }
+
+  for (const field of ["rag", "model"]) {
+    if (
+      typeof config.selectors[field] !== "string" ||
+      config.selectors[field].trim().length === 0
+    ) {
+      throw new TypeError(
+        `Configuration selector "${field}" must be a non-empty string.`
+      );
+    }
+  }
+
+  for (
+    const field of ["maxTokens", "modelMaxTokens"]
+  ) {
+    if (
+      !Number.isFinite(
+        config.selectors[field]
+      ) ||
+      config.selectors[field] <= 0
+    ) {
+      throw new TypeError(
+        `Configuration selector "${field}" must be a positive number.`
+      );
+    }
+  }
+
+  if (
+    !Number.isFinite(config.temperature)
+  ) {
+    throw new TypeError(
+      "Configuration temperature must be a finite number."
+    );
+  }
+
+  if (
+    !Number.isFinite(config.maxTokens) ||
+    config.maxTokens <= 0
+  ) {
+    throw new TypeError(
+      "Configuration maxTokens must be a positive number."
+    );
+  }
+
+  return true;
+}
+
 export function loadConfig() {
   ensureConfigDirectory();
   ensureConfigFile();
@@ -177,7 +298,7 @@ const finalConfig = {
     defaultConfig.maxTokens
   ),
 };
-
+  validateConfig(finalConfig);
   return finalConfig;
 }
 

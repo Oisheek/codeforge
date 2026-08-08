@@ -12,11 +12,11 @@ function resolveModelRole(plan) {
   }
 
   if (
-    typeof plan.modelRole === "string" &&
-    plan.modelRole.trim()
-  ) {
-    return plan.modelRole.trim();
-  }
+  typeof plan.modelRole === "string" &&
+  plan.modelRole.trim()
+) {
+  return plan.modelRole.trim();
+}
 
   if (plan.requiresThinking) {
     return "planner";
@@ -50,8 +50,26 @@ export function routeRequest({
   config = {},
   providers = [],
 }) {
-  const modelRole =
-    resolveModelRole(plan);
+  let modelRole =
+  resolveModelRole(plan);
+
+const availableModels =
+  config.models ?? {};
+
+if (
+  typeof plan?.modelRole === "string" &&
+  plan.modelRole.trim() &&
+  !Object.prototype.hasOwnProperty.call(
+    availableModels,
+    modelRole
+  )
+) {
+  modelRole =
+    resolveModelRole({
+      ...plan,
+      modelRole: null,
+    });
+}
 
   const defaults = {
     provider:
