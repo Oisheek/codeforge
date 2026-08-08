@@ -172,6 +172,98 @@ test(
 );
 
 test(
+  "runs RAG selection and model selection before final execution",
+  async () => {
+    const provider =
+      createProvider([
+        createResponse({
+          content: JSON.stringify({
+            required: false,
+            scope: "none",
+            confidence: 0.98,
+          }),
+        }),
+
+        createResponse({
+          content: JSON.stringify({
+            role: "coding",
+            confidence: 0.95,
+            complexity: "medium",
+            reasoningRequired: false,
+            toolRequired: false,
+            retrievalRequired: false,
+          }),
+        }),
+
+        createResponse({
+          content: "SELECTORS_INTEGRATED_OK",
+        }),
+      ]);
+
+    const result =
+      await execute({
+        prompt:
+          "write a JavaScript function that reverses a string",
+
+        repository:
+          createRepository(),
+
+        provider,
+
+        project: {
+          root:
+            process.cwd(),
+        },
+
+        config:
+          createConfig({
+            models: {
+              fast: "fast-model",
+              general: "general-model",
+              coding: "coding-model",
+              planner: "planner-model",
+              fallback: "fallback-model",
+              emergency: "emergency-model",
+            },
+
+            selectors: {
+              provider: "openrouter",
+              rag: "rag-selector-model",
+              model: "model-selector-model",
+              maxTokens: 128,
+              modelMaxTokens: 256,
+            },
+          }),
+      });
+
+    assert.equal(
+      result.response.message.content,
+      "SELECTORS_INTEGRATED_OK"
+    );
+
+    assert.equal(
+      provider.calls.length,
+      3
+    );
+
+    assert.equal(
+      provider.calls[0].model,
+      "rag-selector-model"
+    );
+
+    assert.equal(
+      provider.calls[1].model,
+      "model-selector-model"
+    );
+
+    assert.equal(
+      provider.calls[2].model,
+      "coding-model"
+    );
+  }
+);
+
+test(
   "uses fallback model after a retryable provider failure",
   async () => {
     const rateLimitError =
