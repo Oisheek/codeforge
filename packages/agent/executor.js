@@ -808,8 +808,8 @@ export async function execute({
       ? plan.steps.join(" → ")
       : "Plan ready",
   });
-// 3. Decide whether repository context is required
-emit({
+
+ emit({
   type: "stage:start",
   stage: "rag_select",
   detail: "Deciding whether repository context is needed",
@@ -842,24 +842,10 @@ const ragDecision =
     plan,
   });
 
-emit({
-  type: "stage:success",
-  stage: "rag_select",
-  detail:
-    ragDecision.required
-      ? `Required · ${ragDecision.scope}`
-      : "Not required",
-  data: ragDecision,
-});
-emit({
-  type: "stage:start",
-  stage: "model_select",
-  detail: "Selecting model role",
-});
-
 const modelSelector =
   createModelSelector({
-    provider,
+    provider:
+      selectorProvider ?? provider,
 
     model:
       config.selectors?.model ?? null,
@@ -921,14 +907,6 @@ requiresRAG:
   ragDecision,
 };
 
-console.log("[DEBUG RAG]", {
-  plannerRequiresRAG: plan.requiresRAG,
-  ragDecision,
-  effectiveRequiresRAG: effectivePlan.requiresRAG,
-  ragScope: effectivePlan.ragScope,
-  directFileTarget: plan.directFileTarget,
-});
-  // 3. Retrieve repository context
 if (effectivePlan?.requiresRAG) {
       emit({
       type: "stage:start",
@@ -1031,7 +1009,7 @@ const modelTools =
   createOpenRouterTools(
     modelAvailableTools
   );
-  // 4. Build model context
+
   emit({
     type: "stage:start",
     stage: "context",
@@ -1054,7 +1032,6 @@ const modelTools =
     detail: "Context ready",
   });
 
-  // 5. Select provider/model
   emit({
     type: "stage:start",
     stage: "route",
@@ -1091,7 +1068,6 @@ const modelTools =
     },
   });
 
-  // 6. Configure reasoning
   emit({
     type: "stage:start",
     stage: "thinking",
