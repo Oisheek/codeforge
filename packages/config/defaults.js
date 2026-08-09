@@ -2,9 +2,9 @@ export const defaultConfig = {
   provider: "openrouter",
 
   models: {
-    fast: "google/gemma-4-31b-it:free",
+    fast: "google/gemma-4-26b-a4b-it:free",
 
-    general: "google/gemma-4-31b-it:free",
+    general: "google/gemma-4-26b-a4b-it:free",
 
     coding: "cohere/north-mini-code:free",
 
@@ -34,18 +34,18 @@ export const defaultConfig = {
     emergency:
       "openrouter/free",
   },
+  
+selectors: {
+  provider: "openrouter",
 
-  selectors: {
-    provider: "openrouter",
+  rag: "google/gemma-4-31b-it:free",
 
-    rag: "google/gemma-4-31b-it:free",
+  model: "google/gemma-4-31b-it:free",
 
-    model: "google/gemma-4-31b-it:free",
+  maxTokens: 128,
 
-    maxTokens: 128,
-
-    modelMaxTokens: 256,
-  },
+  modelMaxTokens: 256,
+},
 
   temperature: 0.2,
 

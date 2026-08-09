@@ -116,6 +116,46 @@ test(
 );
 
 test(
+  "does not select repository RAG for general code generation",
+  async () => {
+    const provider =
+      createFakeProvider(
+        JSON.stringify({
+          required: true,
+          scope: "repository",
+          confidence: 0.99,
+        })
+      );
+
+    const selector =
+      createRagSelector({
+        provider,
+        model: "rag-selector-model",
+      });
+
+    const result =
+      await selector.select({
+        prompt:
+          "Write a JavaScript function that reverses a string.",
+        plan: {
+          intent: "code",
+          requiresRAG: true,
+        },
+      });
+
+    assert.equal(
+      result.required,
+      false
+    );
+
+    assert.equal(
+      result.scope,
+      "none"
+    );
+  }
+);
+
+test(
   "supports file-level retrieval decisions",
   async () => {
     const provider =

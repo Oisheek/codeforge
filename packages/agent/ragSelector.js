@@ -180,6 +180,52 @@ function normalizeDecision(
   };
 }
 
+function hasExplicitRepositorySignal(
+  prompt = ""
+) {
+  if (
+    typeof prompt !== "string"
+  ) {
+    return false;
+  }
+
+  const normalized =
+    prompt.toLowerCase();
+
+  return (
+    /\b(repository|repo|codebase)\b/.test(
+      normalized
+    ) ||
+    /\b(our|this|current)\s+(system|project|codebase|repository|implementation|architecture)\b/.test(
+      normalized
+    ) ||
+    /\b(our|this)\s+(routing|router|fallback|provider|executor|retrieval|rag|planner|agent|terminal|cli|tool|tools?)\b/.test(
+      normalized
+    )
+  );
+}
+
+function isGeneralCodeRequest({
+  prompt = "",
+  plan = {},
+} = {}) {
+  if (
+    plan?.directFileTarget
+  ) {
+    return false;
+  }
+
+  if (
+    plan?.intent !== "code"
+  ) {
+    return false;
+  }
+
+  return !hasExplicitRepositorySignal(
+    prompt
+  );
+}
+
 function buildDeterministicFallback({
   prompt = "",
   plan = {},
@@ -256,6 +302,20 @@ function buildDeterministicFallback({
       required: true,
       scope: "repository",
       confidence: 0,
+    };
+  }
+
+    /*
+   * General programming requests do not require
+   * repository context unless an explicit project
+   * reference was already matched above.
+   */
+  if (
+    plan?.intent === "code" &&
+    !plan?.directFileTarget
+  ) {
+    return {
+      ...DEFAULT_DECISION,
     };
   }
 
@@ -352,15 +412,22 @@ export function createRagSelector({
   model,
   maxTokens = 128,
 } = {}) {
-  async function select({
-    prompt = "",
-    plan = {},
-  } = {}) {
-    const fallback =
-      buildDeterministicFallback({
-        prompt,
-        plan,
-      });
+async function select({
+  prompt = "",
+  plan = {},
+} = {}) {
+  const fallback =
+    buildDeterministicFallback({
+      prompt,
+      plan,
+    });
+
+
+
+  /*
+   * No configured selector model:
+   * preserve safe deterministic behavior.
+   */
 
     /*
      * No configured selector model:
@@ -461,10 +528,24 @@ export function createRagSelector({
         };
       }
 
-      return {
-        ...decision,
-        source: "model",
-      };
+      if (
+  isGeneralCodeRequest({
+    prompt,
+    plan,
+  })
+) {
+  return {
+    required: false,
+    scope: "none",
+    confidence: decision.confidence,
+    source: "model",
+  };
+}
+
+return {
+  ...decision,
+  source: "model",
+};
     } catch {
       /*
        * RAG selection is advisory.
@@ -480,7 +561,8 @@ export function createRagSelector({
   return {
     select,
   };
-}
+} 
+
 
 export {
   RAG_SCOPES,
