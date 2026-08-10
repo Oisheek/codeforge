@@ -60,18 +60,18 @@ function getRepositoryToolPolicy(
     rag.results.filter(
       (result) =>
         result?.reason ===
-        "implementation" &&
+          "implementation" &&
         typeof result?.content ===
-        "string" &&
+          "string" &&
         result.content.trim().length >
-        0
+          0
     );
 
   const substantialResults =
     implementationResults.filter(
       (result) =>
         result.content.trim().length >=
-        500
+          500
     );
 
   const totalImplementationChars =
@@ -460,100 +460,100 @@ async function executeResolvedToolCalls({
         )
         : null;
 
-    if (previous) {
-      const result =
-        createDuplicateToolResult({
-          call,
-          previous,
-        });
-
-      results.push({
-        id: call.id,
-        name: call.name,
-        arguments: call.arguments,
-        result,
-      });
-
-      emit({
-        type: "stage:error",
-        stage: "tool",
-
-        detail:
-          `${call.name}: duplicate call skipped`,
-
-        data: {
-          tool: call.name,
-          toolCallId: call.id,
-          success: false,
-          duplicate: true,
-
-          previousToolCallId:
-            previous.id,
-
-          error: result.error,
-        },
-      });
-
-      continue;
-    }
-
-    const budget =
-      toolBudget &&
-        typeof toolBudget === "object"
-        ? toolBudget[call.name]
-        : null;
-
-    if (
-      budget &&
-      budget.used >= budget.max
-    ) {
-      const result =
-        createToolBudgetResult({
-          call,
-          budget,
-        });
-
-      results.push({
-        id: call.id,
-        name: call.name,
-        arguments: call.arguments,
-        result,
-      });
-
-      emit({
-        type: "stage:error",
-        stage: "tool",
-
-        detail:
-          `${call.name}: tool budget exhausted`,
-
-        data: {
-          tool: call.name,
-          toolCallId: call.id,
-          success: false,
-          budgetExceeded: true,
-          used: budget.used,
-          max: budget.max,
-          error: result.error,
-        },
-      });
-
-      continue;
-    }
-
-    if (budget) {
-      budget.used += 1;
-    }
-
-    emit({
-      type: "stage:start",
-      stage: "tool",
-      detail: `Running ${call.name}`,
-      data: {
-        tool: call.name,
-        toolCallId: call.id,
-      },
+   if (previous) {
+  const result =
+    createDuplicateToolResult({
+      call,
+      previous,
     });
+
+  results.push({
+    id: call.id,
+    name: call.name,
+    arguments: call.arguments,
+    result,
+  });
+
+  emit({
+    type: "stage:error",
+    stage: "tool",
+
+    detail:
+      `${call.name}: duplicate call skipped`,
+
+    data: {
+      tool: call.name,
+      toolCallId: call.id,
+      success: false,
+      duplicate: true,
+
+      previousToolCallId:
+        previous.id,
+
+      error: result.error,
+    },
+  });
+
+  continue;
+}
+
+const budget =
+  toolBudget &&
+  typeof toolBudget === "object"
+    ? toolBudget[call.name]
+    : null;
+
+if (
+  budget &&
+  budget.used >= budget.max
+) {
+  const result =
+    createToolBudgetResult({
+      call,
+      budget,
+    });
+
+  results.push({
+    id: call.id,
+    name: call.name,
+    arguments: call.arguments,
+    result,
+  });
+
+  emit({
+    type: "stage:error",
+    stage: "tool",
+
+    detail:
+      `${call.name}: tool budget exhausted`,
+
+    data: {
+      tool: call.name,
+      toolCallId: call.id,
+      success: false,
+      budgetExceeded: true,
+      used: budget.used,
+      max: budget.max,
+      error: result.error,
+    },
+  });
+
+  continue;
+}
+
+if (budget) {
+  budget.used += 1;
+}
+
+emit({
+  type: "stage:start",
+  stage: "tool",
+  detail: `Running ${call.name}`,
+  data: {
+    tool: call.name,
+    toolCallId: call.id,
+  },
+});
     let result =
       await executeAuthorizedTool(
         call.tool,
@@ -809,106 +809,106 @@ export async function execute({
       : "Plan ready",
   });
 
-  emit({
-    type: "stage:start",
-    stage: "rag_select",
-    detail: "Deciding whether repository context is needed",
-  });
+ emit({
+  type: "stage:start",
+  stage: "rag_select",
+  detail: "Deciding whether repository context is needed",
+});
 
-  const selectorProvider =
-    config.selectors?.provider
-      ? providers.find(
+const selectorProvider =
+  config.selectors?.provider
+    ? providers.find(
         (item) =>
           item?.name ===
           config.selectors.provider
       )?.provider ?? null
-      : provider;
+    : provider;
 
-  const ragSelector =
-    createRagSelector({
-      provider:
-        selectorProvider ?? provider,
+const ragSelector =
+  createRagSelector({
+    provider:
+      selectorProvider ?? provider,
 
-      model:
-        config.selectors?.rag ?? null,
+    model:
+      config.selectors?.rag ?? null,
 
-      maxTokens:
-        config.selectors?.maxTokens ?? 128,
-    });
-
-  const ragDecision =
-    await ragSelector.select({
-      prompt,
-      plan,
-    });
-
-  const modelSelector =
-    createModelSelector({
-      provider:
-        selectorProvider ?? provider,
-
-      model:
-        config.selectors?.model ?? null,
-
-      maxTokens:
-        config.selectors?.modelMaxTokens ?? 256,
-    });
-
-  const modelDecision =
-    await modelSelector.select({
-      prompt,
-      intent,
-      plan,
-      ragDecision,
-
-      availableRoles:
-        Object.keys(
-          config.models ?? {}
-        ).filter(
-          (role) =>
-            ![
-              "fallback",
-              "emergency",
-            ].includes(role)
-        ),
-    });
-
-  emit({
-    type: "stage:success",
-    stage: "model_select",
-    detail:
-      `${modelDecision.role} · ${Math.round(
-        modelDecision.confidence * 100
-      )}%`,
-    data: modelDecision,
+    maxTokens:
+      config.selectors?.maxTokens ?? 128,
   });
-  const effectivePlan = {
-    ...plan,
 
-    requiresRAG:
-      ragDecision.required &&
-      !plan.directFileTarget,
+const ragDecision =
+  await ragSelector.select({
+    prompt,
+    plan,
+  });
 
-    ragScope:
-      ragDecision.scope,
+const modelSelector =
+  createModelSelector({
+    provider:
+      selectorProvider ?? provider,
 
-    requiresThinking:
-      modelDecision.reasoningRequired ||
-      plan.requiresThinking,
+    model:
+      config.selectors?.model ?? null,
 
-    requiresTools:
-      modelDecision.toolRequired ||
-      plan.requiresTools,
+    maxTokens:
+      config.selectors?.modelMaxTokens ?? 256,
+  });
 
-    modelRole:
-      modelDecision.role,
-
-    modelDecision,
+const modelDecision =
+  await modelSelector.select({
+    prompt,
+    intent,
+    plan,
     ragDecision,
-  };
 
-  if (effectivePlan?.requiresRAG) {
-    emit({
+    availableRoles:
+      Object.keys(
+        config.models ?? {}
+      ).filter(
+        (role) =>
+          ![
+            "fallback",
+            "emergency",
+          ].includes(role)
+      ),
+  });
+
+emit({
+  type: "stage:success",
+  stage: "model_select",
+  detail:
+    `${modelDecision.role} · ${Math.round(
+      modelDecision.confidence * 100
+    )}%`,
+  data: modelDecision,
+});
+const effectivePlan = {
+  ...plan,
+
+requiresRAG:
+    ragDecision.required &&
+    !plan.directFileTarget,
+
+  ragScope:
+    ragDecision.scope,
+
+  requiresThinking:
+    modelDecision.reasoningRequired ||
+    plan.requiresThinking,
+
+  requiresTools:
+    modelDecision.toolRequired ||
+    plan.requiresTools,
+
+  modelRole:
+    modelDecision.role,
+
+  modelDecision,
+  ragDecision,
+};
+
+if (effectivePlan?.requiresRAG) {
+      emit({
       type: "stage:start",
       stage: "retrieve",
       detail: "Searching repository context",
@@ -916,26 +916,26 @@ export async function execute({
   }
 
   let rag = {
-    enabled: false,
-    results: [],
-    stats: {
-      retrieved: 0,
-      selected: 0,
-      estimatedTokens: 0,
-      tokenBudget: 0,
-      remainingTokens: 0,
-      utilization: 0,
-    },
-  };
+  enabled: false,
+  results: [],
+  stats: {
+    retrieved: 0,
+    selected: 0,
+    estimatedTokens: 0,
+    tokenBudget: 0,
+    remainingTokens: 0,
+    utilization: 0,
+  },
+};
 
-  if (effectivePlan.requiresRAG) {
-    rag =
-      await retrieveContext({
-        repository,
-        plan: effectivePlan,
-        query: prompt,
-      });
-  }
+if (effectivePlan.requiresRAG) {
+  rag =
+    await retrieveContext({
+      repository,
+      plan: effectivePlan,
+      query: prompt,
+    });
+}
 
   const retrievalCount =
     rag?.results?.length ??
@@ -952,8 +952,8 @@ export async function execute({
         result.path
     );
 
-  if (effectivePlan?.requiresRAG) {
-    emit({
+if (effectivePlan?.requiresRAG) {
+      emit({
       type: "stage:success",
       stage: "retrieve",
       detail:
@@ -968,26 +968,26 @@ export async function execute({
       },
     });
   }
-  const repositoryToolPolicy =
-    getRepositoryToolPolicy(
-      rag
-    );
+const repositoryToolPolicy =
+  getRepositoryToolPolicy(
+    rag
+  );
 
-  const shouldAnswerFromRAG =
-    repositoryToolPolicy
-      .evidenceLevel ===
-    "comprehensive";
+const shouldAnswerFromRAG =
+  repositoryToolPolicy
+    .evidenceLevel ===
+  "comprehensive";
 
-  const modelAvailableTools =
-    shouldAnswerFromRAG
-      ? []
-      : availableTools.filter(
+const modelAvailableTools =
+  shouldAnswerFromRAG
+    ? []
+    : availableTools.filter(
         (tool) => {
           if (
             repositoryToolPolicy
               .suppressSearch &&
             tool.name ===
-            "search_files"
+              "search_files"
           ) {
             return false;
           }
@@ -996,7 +996,7 @@ export async function execute({
             repositoryToolPolicy
               .suppressRead &&
             tool.name ===
-            "read_file"
+              "read_file"
           ) {
             return false;
           }
@@ -1005,10 +1005,10 @@ export async function execute({
         }
       );
 
-  const modelTools =
-    createOpenRouterTools(
-      modelAvailableTools
-    );
+const modelTools =
+  createOpenRouterTools(
+    modelAvailableTools
+  );
 
   emit({
     type: "stage:start",
@@ -1112,17 +1112,17 @@ export async function execute({
     config.maxAttempts ?? 3;
 
   const configuredMaxToolRounds =
-    config.maxToolRounds ?? 10;
+  config.maxToolRounds ?? 10;
 
-  const maxToolRounds =
-    repositoryToolPolicy
-      .evidenceLevel ===
+const maxToolRounds =
+  repositoryToolPolicy
+    .evidenceLevel ===
       "comprehensive"
-      ? Math.min(
+    ? Math.min(
         configuredMaxToolRounds,
         3
       )
-      : configuredMaxToolRounds;
+    : configuredMaxToolRounds;
   const maxToolProtocolErrors = 2;
 
   const messages = [];
@@ -1212,30 +1212,7 @@ export async function execute({
             tools: modelTools,
             stream: route.stream,
           });
-        if (
-          response &&
-          Array.isArray(response.toolCalls) &&
-          response.toolCalls.length === 0
-        ) {
-          emit({
-            type: "stage:info",
-            stage: "generate",
-            detail: "Final model response received",
-            data: {
-              hasMessage: Boolean(response.message),
-              contentType:
-                typeof response.message?.content,
-              contentLength:
-                typeof response.message?.content === "string"
-                  ? response.message.content.length
-                  : 0,
-              finishReason:
-                response.finishReason ?? null,
-              model:
-                response.model ?? null,
-            },
-          });
-        }
+
         const responseToolCalls =
           Array.isArray(response?.toolCalls)
             ? response.toolCalls
@@ -1298,7 +1275,7 @@ export async function execute({
 
               emit,
             });
-        } catch (error) {
+               } catch (error) {
           const recoverableToolErrors =
             new Set([
               "invalid_tool_arguments",
