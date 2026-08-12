@@ -79,6 +79,7 @@ export function formatRetrievalResults(results = []) {
 
 function buildModelUserMessage({
   prompt,
+  plan,
   project,
   git,
   rag,
@@ -156,6 +157,18 @@ function buildModelUserMessage({
       "Base claims about the codebase on the provided repository evidence.",
       "Do not invent files, symbols, dependencies, or behavior that are not supported by the available context.",
       "If the available repository context is insufficient, say what information is missing rather than pretending you inspected code that was not provided.",
+      plan?.requiresTools ||
+plan?.requiresWrite
+  ? [
+      "Engineering workflow:",
+      "Inspect relevant project files before making changes.",
+      "Use the available file tools to make the requested implementation changes.",
+      "After making changes, use execute_command to run an appropriate verification command when one is available.",
+      "If verification fails, use the failure output to diagnose the problem, modify the implementation, and verify again.",
+      "Do not claim the implementation is complete until it has been verified, unless verification cannot reasonably be performed.",
+      "Keep changes focused on the user's request.",
+    ].join("\n")
+  : null,
       "Return a direct final answer to the user.",
     ].join("\n")
   );
@@ -179,6 +192,7 @@ export function buildContext({
 
     modelUser: buildModelUserMessage({
       prompt,
+      plan,
       project,
       git,
       rag,

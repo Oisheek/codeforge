@@ -139,3 +139,137 @@ test(
     );
   }
 );
+test(
+  "adds engineering workflow instructions for tool-enabled tasks",
+  () => {
+    const context =
+      buildContext({
+        prompt:
+          "Fix the failing implementation and run the tests.",
+
+        plan: {
+          intent: "debug",
+          steps: [
+            "Inspect the relevant files.",
+            "Fix the implementation.",
+            "Run verification.",
+          ],
+          requiresRAG: true,
+          requiresThinking: true,
+          requiresTools: true,
+          requiresWrite: true,
+          requiresGit: false,
+        },
+
+        project: {
+          name: "CodeForge",
+          root: "/tmp/codeforge",
+          language: "javascript",
+        },
+
+        git: {
+          branch: {
+            current: "main",
+          },
+
+          status: {
+            clean: true,
+          },
+        },
+
+        rag: {
+          enabled: false,
+          results: [],
+        },
+
+        systemPrompt:
+          "You are CodeForge.",
+      });
+
+    assert.match(
+      context.modelUser,
+      /Engineering workflow:/
+    );
+
+    assert.match(
+      context.modelUser,
+      /Inspect relevant project files before making changes\./
+    );
+
+    assert.match(
+      context.modelUser,
+      /Use the available file tools to make the requested implementation changes\./
+    );
+
+    assert.match(
+      context.modelUser,
+      /After making changes, use execute_command to run an appropriate verification command when one is available\./
+    );
+
+    assert.match(
+      context.modelUser,
+      /If verification fails, use the failure output to diagnose the problem, modify the implementation, and verify again\./
+    );
+
+    assert.match(
+      context.modelUser,
+      /Do not claim the implementation is complete until it has been verified/
+    );
+  }
+);
+test(
+  "does not add engineering workflow instructions for non-tool tasks",
+  () => {
+    const context =
+      buildContext({
+        prompt:
+          "Explain recursion in simple terms.",
+
+        plan: {
+          intent: "explain",
+          steps: [
+            "Explain recursion.",
+          ],
+          requiresRAG: false,
+          requiresThinking: false,
+          requiresTools: false,
+          requiresWrite: false,
+          requiresGit: false,
+        },
+
+        project: {
+          name: "CodeForge",
+          root: "/tmp/codeforge",
+          language: "javascript",
+        },
+
+        git: {
+          branch: {
+            current: "main",
+          },
+
+          status: {
+            clean: true,
+          },
+        },
+
+        rag: {
+          enabled: false,
+          results: [],
+        },
+
+        systemPrompt:
+          "You are CodeForge.",
+      });
+
+    assert.doesNotMatch(
+      context.modelUser,
+      /Engineering workflow:/
+    );
+
+    assert.match(
+      context.modelUser,
+      /Return a direct final answer to the user\./
+    );
+  }
+);

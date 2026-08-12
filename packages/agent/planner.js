@@ -267,20 +267,24 @@ function createPlan(intent) {
         ],
       };
 
-    case Intent.DEBUG:
-      return {
-        ...DEFAULT_PLAN,
-        intent,
-        requiresRAG: true,
-        requiresThinking: true,
-        steps: [
-          "retrieve",
-          "context",
-          "think",
-          "route",
-          "generate",
-        ],
-      };
+   case Intent.DEBUG:
+  return {
+    ...DEFAULT_PLAN,
+    intent,
+    requiresRAG: true,
+    requiresThinking: true,
+    requiresTools: true,
+    requiresWrite: true,
+    steps: [
+      "retrieve",
+      "context",
+      "think",
+      "route",
+      "generate",
+      "write",
+      "verify",
+    ],
+  };
 
     case Intent.REVIEW:
       return {

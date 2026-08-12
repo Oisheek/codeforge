@@ -2,11 +2,32 @@ import {
   spawn,
 } from "node:child_process";
 
+import {
+  defineTool,
+} from "../core/tool.js";
+
+function createShellError(
+  code,
+  message,
+  details = null
+) {
+  const error =
+    new Error(message);
+
+  error.code = code;
+
+  if (details !== null) {
+    error.details = details;
+  }
+
+  return error;
+}
+
 /**
  * Execute a command in the project.
  *
- * This tool deliberately does not decide whether execution is allowed.
- * Approval/capability authorization belongs to the agent/tool execution layer.
+ * Approval/capability authorization belongs
+ * to the agent/tool execution layer.
  *
  * @param {object} options
  * @param {string} options.command
@@ -60,6 +81,10 @@ export async function executeShell({
   return new Promise((resolve) => {
     let stdout = "";
     let stderr = "";
+
+    let stdoutTruncated = false;
+    let stderrTruncated = false;
+
     let timedOut = false;
     let settled = false;
 
@@ -67,9 +92,11 @@ export async function executeShell({
       current,
       chunk
     ) => {
-      const next =
-        current +
+      const text =
         chunk.toString();
+
+      const next =
+        current + text;
 
       if (
         Buffer.byteLength(
@@ -77,7 +104,10 @@ export async function executeShell({
           "utf8"
         ) <= maxOutputBytes
       ) {
-        return next;
+        return {
+          value: next,
+          truncated: false,
+        };
       }
 
       const buffer =
@@ -86,27 +116,34 @@ export async function executeShell({
           "utf8"
         );
 
-      return buffer
-        .subarray(
-          0,
-          maxOutputBytes
-        )
-        .toString("utf8");
+      return {
+        value:
+          buffer
+            .subarray(
+              0,
+              maxOutputBytes
+            )
+            .toString("utf8"),
+
+        truncated: true,
+      };
     };
 
-    const child = spawn(
-      command,
-      {
-        cwd,
-        shell: true,
-        windowsHide: true,
-        stdio: [
-          "ignore",
-          "pipe",
-          "pipe",
-        ],
-      }
-    );
+    const child =
+      spawn(
+        command,
+        {
+          cwd,
+          shell: true,
+          windowsHide: true,
+
+          stdio: [
+            "ignore",
+            "pipe",
+            "pipe",
+          ],
+        }
+      );
 
     const timer =
       setTimeout(() => {
@@ -122,47 +159,94 @@ export async function executeShell({
     child.stdout.on(
       "data",
       (chunk) => {
-        stdout =
+        const result =
           appendOutput(
             stdout,
             chunk
           );
+
+        stdout =
+          result.value;
+
+        stdoutTruncated =
+          stdoutTruncated ||
+          result.truncated;
       }
     );
 
     child.stderr.on(
       "data",
       (chunk) => {
-        stderr =
+        const result =
           appendOutput(
             stderr,
             chunk
           );
+
+        stderr =
+          result.value;
+
+        stderrTruncated =
+          stderrTruncated ||
+          result.truncated;
       }
     );
 
     const finish = ({
       code = null,
       signal = null,
+      error = null,
     } = {}) => {
       if (settled) {
         return;
       }
 
       settled = true;
+
       clearTimeout(timer);
 
-      const success =
-        !timedOut &&
-        code === 0;
+      if (error) {
+        resolve({
+          success: false,
+
+          output: {
+            command,
+            cwd,
+            stdout,
+            stderr,
+            stdoutTruncated,
+            stderrTruncated,
+            exitCode: code,
+            signal,
+            timedOut,
+          },
+
+          error: {
+            code:
+              error?.code ??
+              "shell_execution_error",
+
+            message:
+              error?.message ??
+              "Shell execution failed.",
+          },
+        });
+
+        return;
+      }
 
       resolve({
-        success,
+        success:
+          !timedOut &&
+          code === 0,
+
         output: {
           command,
           cwd,
           stdout,
           stderr,
+          stdoutTruncated,
+          stderrTruncated,
           exitCode: code,
           signal,
           timedOut,
@@ -173,27 +257,8 @@ export async function executeShell({
     child.on(
       "error",
       (error) => {
-        finish();
-
-        resolve({
-          success: false,
-          output: {
-            command,
-            cwd,
-            stdout,
-            stderr,
-            exitCode: null,
-            signal: null,
-            timedOut,
-          },
-          error: {
-            code:
-              error?.code ??
-              "shell_execution_error",
-            message:
-              error?.message ??
-              "Shell execution failed.",
-          },
+        finish({
+          error,
         });
       }
     );
@@ -208,4 +273,80 @@ export async function executeShell({
       }
     );
   });
-}
+};
+
+/**
+ * CodeForge command-execution tool.
+ */
+export const shellTool =
+  defineTool({
+    name: "execute_command",
+
+    description:
+      "Execute a shell command in the current project. Use this to run tests, builds, scripts, git commands, or other project commands. Execution requires explicit user approval.",
+
+    source: "builtin",
+
+    capabilities: [
+      "process.execute",
+    ],
+
+    sideEffect: "execute",
+
+    approval: "always",
+
+    inputSchema: {
+      type: "object",
+
+      properties: {
+        command: {
+          type: "string",
+          minLength: 1,
+          description:
+            "Shell command to execute.",
+        },
+      },
+
+      required: [
+        "command",
+      ],
+
+      additionalProperties: false,
+    },
+
+    async execute(
+      input,
+      context = {}
+    ) {
+      const command =
+        input?.command;
+
+      if (
+        typeof command !== "string" ||
+        command.trim().length === 0
+      ) {
+        throw createShellError(
+          "invalid_command",
+          "Command must be a non-empty string."
+        );
+      }
+
+      const projectRoot =
+        context.projectRoot;
+
+      if (
+        typeof projectRoot !== "string" ||
+        projectRoot.trim().length === 0
+      ) {
+        throw createShellError(
+          "project_root_required",
+          "A project root is required for command execution."
+        );
+      }
+
+      return executeShell({
+        command,
+        cwd: projectRoot,
+      });
+    },
+  });

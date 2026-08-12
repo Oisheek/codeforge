@@ -18,3 +18,7 @@ export {
 export {
   editFileTool,
 } from "./editFile.js";
+
+export {
+  shellTool,
+} from "./shell.js";

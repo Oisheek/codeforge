@@ -1174,16 +1174,21 @@ export async function execute({
         new Map();
 
       const toolBudget = {
-        search_files: {
-          used: 0,
-          max: 2,
-        },
+  search_files: {
+    used: 0,
+    max: 2,
+  },
 
-        read_file: {
-          used: 0,
-          max: 6,
-        },
-      };
+  read_file: {
+    used: 0,
+    max: 6,
+  },
+
+  execute_command: {
+    used: 0,
+    max: 3,
+  },
+};
 
       while (true) {
         const contextMetrics =
@@ -1289,6 +1294,7 @@ export async function execute({
                 "filesystem.read",
                 "filesystem.search",
                 "filesystem.write",
+                "process.execute",
               ],
 
               requestApproval,

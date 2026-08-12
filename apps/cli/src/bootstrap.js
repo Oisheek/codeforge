@@ -43,6 +43,7 @@ import {
   searchFilesTool,
   writeFileTool,
   editFileTool,
+  shellTool,
 } from "../../../packages/tools/index.js";
 
 import { startCLI } from "./cli.js";
@@ -85,6 +86,7 @@ export async function bootstrap() {
   searchFilesTool,
   writeFileTool,
   editFileTool,
+  shellTool,
 ]);
 
 logger.success(

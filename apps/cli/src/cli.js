@@ -17,7 +17,14 @@ async function requestToolApproval(
   logger.warn(
     `Approval required: ${toolName}`
   );
-
+if (
+  toolName === "execute_command" &&
+  typeof args.command === "string"
+) {
+  logger.plain(
+    `Command: ${args.command}`
+  );
+}
   if (args.path) {
     logger.plain(
       `Path: ${args.path}`

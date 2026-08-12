@@ -4,11 +4,17 @@ import {
   createToolRegistry,
   readFileTool,
   searchFilesTool,
+  editFileTool,
+  shellTool,
 } from "../../tools/index.js";
 
 import {
   execute,
 } from "../executor.js";
+
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 function createRepository({
   results = [],
@@ -167,6 +173,83 @@ test(
     assert.equal(
       provider.calls.length,
       1
+    );
+  }
+);
+
+test(
+  "passes engineering workflow instructions to the model for coding tasks",
+  async () => {
+    const provider =
+      createProvider([
+        createResponse({
+          content:
+            "CODING_CONTEXT_OK",
+        }),
+      ]);
+
+    const result =
+      await execute({
+        prompt:
+          "Fix the failing implementation and run the tests.",
+
+        repository:
+          createRepository(),
+
+        provider,
+
+        project: {
+          root:
+            process.cwd(),
+        },
+
+        config:
+          createConfig({
+            maxAttempts: 1,
+          }),
+      });
+
+    assert.equal(
+      result.response.message.content,
+      "CODING_CONTEXT_OK"
+    );
+
+    assert.equal(
+      provider.calls.length,
+      1
+    );
+
+    const firstRequest =
+      provider.calls[0];
+
+    const userMessage =
+      firstRequest.messages.find(
+        (message) =>
+          message.role === "user"
+      );
+
+    assert.ok(
+      userMessage
+    );
+
+    assert.match(
+      userMessage.content,
+      /Engineering workflow:/
+    );
+
+    assert.match(
+      userMessage.content,
+      /Inspect relevant project files before making changes\./
+    );
+
+    assert.match(
+      userMessage.content,
+      /After making changes, use execute_command to run an appropriate verification command when one is available\./
+    );
+
+    assert.match(
+      userMessage.content,
+      /If verification fails, use the failure output to diagnose the problem, modify the implementation, and verify again\./
     );
   }
 );
@@ -2365,5 +2448,842 @@ test(
       result.response.message.content,
       "Routing architecture explained from RAG."
     );
+  }
+);
+
+test(
+  "requests approval before executing execute_command",
+  async () => {
+    const tools =
+      createToolRegistry([
+        shellTool,
+      ]);
+
+    const provider =
+      createProvider([
+        createResponse({
+          content: null,
+
+          toolCalls: [
+            {
+              id: "shell_approval_1",
+
+              type: "function",
+
+              function: {
+                name:
+                  "execute_command",
+
+                arguments:
+                  JSON.stringify({
+                    command:
+                      'node -e "console.log(123)"',
+                  }),
+              },
+            },
+          ],
+        }),
+
+        createResponse({
+          content:
+            "APPROVAL_REQUIRED_OK",
+        }),
+      ]);
+
+    const result =
+      await execute({
+        prompt:
+          "Run the command.",
+
+        repository:
+          createRepository(),
+
+        provider,
+        tools,
+
+        project: {
+          root:
+            process.cwd(),
+        },
+
+        config:
+          createConfig({
+            maxAttempts: 1,
+            maxToolRounds: 5,
+          }),
+      });
+
+    assert.equal(
+      result.response.message.content,
+      "APPROVAL_REQUIRED_OK"
+    );
+
+    assert.equal(
+      result.toolResults.length,
+      1
+    );
+
+    assert.equal(
+      result.toolResults[0].name,
+      "execute_command"
+    );
+
+    assert.equal(
+      result.toolResults[0].result.success,
+      false
+    );
+
+    assert.equal(
+      result.toolResults[0].result.error.code,
+      "approval_required"
+    );
+  }
+);
+
+test(
+  "executes execute_command after approval",
+  async () => {
+    const tools =
+      createToolRegistry([
+        shellTool,
+      ]);
+
+    const approvalRequests = [];
+
+    const provider =
+      createProvider([
+        createResponse({
+          content: null,
+
+          toolCalls: [
+            {
+              id: "shell_approved_1",
+
+              type: "function",
+
+              function: {
+                name:
+                  "execute_command",
+
+                arguments:
+                  JSON.stringify({
+                    command:
+                      'node -e "console.log(123)"',
+                  }),
+              },
+            },
+          ],
+        }),
+
+        createResponse({
+          content:
+            "SHELL_APPROVED_OK",
+        }),
+      ]);
+
+    const result =
+      await execute({
+        prompt:
+          "Run the command.",
+
+        repository:
+          createRepository(),
+
+        provider,
+        tools,
+
+        project: {
+          root:
+            process.cwd(),
+        },
+
+        config:
+          createConfig({
+            maxAttempts: 1,
+            maxToolRounds: 5,
+          }),
+
+        requestApproval:
+          async (request) => {
+            approvalRequests.push(
+              request
+            );
+
+            return true;
+          },
+      });
+
+    assert.equal(
+      result.response.message.content,
+      "SHELL_APPROVED_OK"
+    );
+
+    assert.equal(
+      approvalRequests.length,
+      1
+    );
+
+    assert.equal(
+      approvalRequests[0].toolName,
+      "execute_command"
+    );
+
+    assert.equal(
+      approvalRequests[0]
+        .arguments.command,
+      'node -e "console.log(123)"'
+    );
+
+    assert.equal(
+      result.toolResults.length,
+      1
+    );
+
+    assert.equal(
+      result.toolResults[0].result.success,
+      true
+    );
+
+    const stdout =
+  result.toolResults[0]
+    .result.output.output.stdout;
+
+assert.ok(
+  stdout.includes("123")
+);
+
+    assert.equal(
+      result.toolResults[0]
+        .result.output.output.exitCode,
+      0
+    );
+  }
+);
+
+test(
+  "does not execute execute_command after approval is denied",
+  async () => {
+    const tools =
+      createToolRegistry([
+        shellTool,
+      ]);
+
+    const approvalRequests = [];
+
+    const provider =
+      createProvider([
+        createResponse({
+          content: null,
+
+          toolCalls: [
+            {
+              id: "shell_denied_1",
+
+              type: "function",
+
+              function: {
+                name:
+                  "execute_command",
+
+                arguments:
+                  JSON.stringify({
+                    command:
+                      'node -e "console.log(123)"',
+                  }),
+              },
+            },
+          ],
+        }),
+
+        createResponse({
+          content:
+            "SHELL_DENIED_OK",
+        }),
+      ]);
+
+    const result =
+      await execute({
+        prompt:
+          "Run the command.",
+
+        repository:
+          createRepository(),
+
+        provider,
+        tools,
+
+        project: {
+          root:
+            process.cwd(),
+        },
+
+        config:
+          createConfig({
+            maxAttempts: 1,
+            maxToolRounds: 5,
+          }),
+
+        requestApproval:
+          async (request) => {
+            approvalRequests.push(
+              request
+            );
+
+            return false;
+          },
+      });
+
+    assert.equal(
+      result.response.message.content,
+      "SHELL_DENIED_OK"
+    );
+
+    assert.equal(
+      approvalRequests.length,
+      1
+    );
+
+    assert.equal(
+      result.toolResults.length,
+      1
+    );
+
+    assert.equal(
+      result.toolResults[0].result.success,
+      false
+    );
+
+    assert.equal(
+      result.toolResults[0]
+        .result.error.code,
+      "approval_denied"
+    );
+  }
+);
+
+test(
+  "returns execute_command failure to the model",
+  async () => {
+    const tools =
+      createToolRegistry([
+        shellTool,
+      ]);
+
+    const provider =
+      createProvider([
+        createResponse({
+          content: null,
+
+          toolCalls: [
+            {
+              id: "shell_failure_1",
+
+              type: "function",
+
+              function: {
+                name:
+                  "execute_command",
+
+                arguments:
+                  JSON.stringify({
+                    command:
+                      'node -e "process.exit(7)"',
+                  }),
+              },
+            },
+          ],
+        }),
+
+        createResponse({
+          content:
+            "SHELL_FAILURE_HANDLED",
+        }),
+      ]);
+
+    const result =
+      await execute({
+        prompt:
+          "Run the failing command.",
+
+        repository:
+          createRepository(),
+
+        provider,
+        tools,
+
+        project: {
+          root:
+            process.cwd(),
+        },
+
+        config:
+          createConfig({
+            maxAttempts: 1,
+            maxToolRounds: 5,
+          }),
+
+        requestApproval:
+          async () => true,
+      });
+
+    assert.equal(
+      result.response.message.content,
+      "SHELL_FAILURE_HANDLED"
+    );
+
+    assert.equal(
+      result.toolResults.length,
+      1
+    );
+
+    assert.equal(
+      result.toolResults[0].result.success,
+      true
+    );
+
+    assert.equal(
+      result.toolResults[0]
+        .result.output.success,
+      false
+    );
+
+    assert.equal(
+      result.toolResults[0]
+        .result.output.output.exitCode,
+      7
+    );
+  }
+);
+
+test(
+  "iterates execute_command after a command failure",
+  async () => {
+    const tools =
+      createToolRegistry([
+        shellTool,
+      ]);
+
+    const approvalRequests = [];
+
+    const provider =
+      createProvider([
+        createResponse({
+          content: null,
+
+          toolCalls: [
+            {
+              id: "shell_iterate_1",
+
+              type: "function",
+
+              function: {
+                name:
+                  "execute_command",
+
+                arguments:
+                  JSON.stringify({
+                    command:
+                      'node -e "process.exit(7)"',
+                  }),
+              },
+            },
+          ],
+        }),
+
+        createResponse({
+          content: null,
+
+          toolCalls: [
+            {
+              id: "shell_iterate_2",
+
+              type: "function",
+
+              function: {
+                name:
+                  "execute_command",
+
+                arguments:
+                  JSON.stringify({
+                    command:
+                      'node -e "console.log(456)"',
+                  }),
+              },
+            },
+          ],
+        }),
+
+        createResponse({
+          content:
+            "ITERATION_SUCCESS",
+        }),
+      ]);
+
+    const result =
+      await execute({
+        prompt:
+          "Run the command and fix it if it fails.",
+
+        repository:
+          createRepository(),
+
+        provider,
+        tools,
+
+        project: {
+          root:
+            process.cwd(),
+        },
+
+        config:
+          createConfig({
+            maxAttempts: 1,
+            maxToolRounds: 5,
+          }),
+
+        requestApproval:
+          async (request) => {
+            approvalRequests.push(
+              request
+            );
+
+            return true;
+          },
+      });
+
+    /*
+     * The model should have made:
+     *
+     * 1. First execute_command call.
+     * 2. Second execute_command call after
+     *    receiving the failure result.
+     * 3. Final response.
+     */
+    assert.equal(
+      provider.calls.length,
+      3
+    );
+
+    /*
+     * Both commands require approval.
+     */
+    assert.equal(
+      approvalRequests.length,
+      2
+    );
+
+    assert.equal(
+      approvalRequests[0]
+        .arguments.command,
+      'node -e "process.exit(7)"'
+    );
+
+    assert.equal(
+      approvalRequests[1]
+        .arguments.command,
+      'node -e "console.log(456)"'
+    );
+
+    /*
+     * First command actually failed.
+     */
+    assert.equal(
+      result.toolResults[0]
+        .result.success,
+      true
+    );
+
+    assert.equal(
+      result.toolResults[0]
+        .result.output.success,
+      false
+    );
+
+    assert.equal(
+      result.toolResults[0]
+        .result.output.output.exitCode,
+      7
+    );
+
+    /*
+     * Second command actually succeeded.
+     */
+    assert.equal(
+      result.toolResults[1]
+        .result.success,
+      true
+    );
+
+    assert.equal(
+      result.toolResults[1]
+        .result.output.success,
+      true
+    );
+
+    assert.equal(
+      result.toolResults[1]
+        .result.output.output.exitCode,
+      0
+    );
+
+    assert.ok(
+      result.toolResults[1]
+        .result.output.output.stdout
+        .includes("456")
+    );
+
+    /*
+     * The executor completed normally after
+     * the successful second command.
+     */
+    assert.equal(
+      result.response.message.content,
+      "ITERATION_SUCCESS"
+    );
+
+    assert.equal(
+      result.telemetry.toolRounds,
+      2
+    );
+  }
+);
+
+test(
+  "iterates edit_file and execute_command until verification succeeds",
+  async () => {
+    const temporaryDirectory =
+      await fs.mkdtemp(
+        path.join(
+          os.tmpdir(),
+          "codeforge-agent-"
+        )
+      );
+
+    const filePath =
+      path.join(
+        temporaryDirectory,
+        "sample.js"
+      );
+
+    try {
+      await fs.writeFile(
+        filePath,
+        'export const value = "bad";\n',
+        "utf8"
+      );
+
+      const tools =
+        createToolRegistry([
+          editFileTool,
+          shellTool,
+        ]);
+
+      const approvalRequests = [];
+
+      const provider =
+        createProvider([
+          /*
+           * Round 1:
+           * Make the first edit.
+           */
+          createResponse({
+            content: null,
+
+            toolCalls: [
+              {
+                id:
+                  "edit_verify_1",
+
+                type: "function",
+
+                function: {
+                  name:
+                    "edit_file",
+
+                  arguments:
+                    JSON.stringify({
+                      path:
+                        filePath,
+
+                      oldText:
+                        'export const value = "bad";',
+
+                      newText:
+                        'export const value = "good";',
+                    }),
+                },
+              },
+            ],
+          }),
+
+          /*
+           * Round 2:
+           * Verify the change.
+           *
+           * The command deliberately checks
+           * for the corrected value.
+           */
+          createResponse({
+            content: null,
+
+            toolCalls: [
+              {
+                id:
+                  "execute_verify_1",
+
+                type: "function",
+
+function: {
+  name:
+    "execute_command",
+
+  arguments:
+    JSON.stringify({
+      command:
+        `node -e "const fs=require('fs'); const s=fs.readFileSync('sample.js','utf8'); if (!s.includes('value = \\"good\\"')) process.exit(1)"`,
+    }),
+},
+              },
+            ],
+          }),
+
+          /*
+           * Round 3:
+           * Final response after verification.
+           */
+          createResponse({
+            content:
+              "EDIT_VERIFY_SUCCESS",
+          }),
+        ]);
+
+      const result =
+        await execute({
+          prompt:
+            "Fix the value in the file and verify the change.",
+
+          repository:
+            createRepository(),
+
+          provider,
+          tools,
+
+          project: {
+            root:
+              temporaryDirectory,
+          },
+
+          config:
+            createConfig({
+              maxAttempts: 1,
+              maxToolRounds: 5,
+            }),
+
+          requestApproval:
+            async (request) => {
+              approvalRequests.push(
+                request
+              );
+
+              return true;
+            },
+        });
+
+      const finalSource =
+        await fs.readFile(
+          filePath,
+          "utf8"
+        );
+
+      /*
+       * The file was actually modified.
+       */
+      assert.equal(
+        finalSource,
+        'export const value = "good";\n'
+      );
+
+      /*
+       * Three model calls:
+       *
+       * 1. edit_file
+       * 2. execute_command
+       * 3. final response
+       */
+      assert.equal(
+        provider.calls.length,
+        3
+      );
+
+      /*
+       * Both mutating operations required
+       * approval.
+       */
+      assert.equal(
+        approvalRequests.length,
+        2
+      );
+
+      assert.equal(
+        approvalRequests[0].toolName,
+        "edit_file"
+      );
+
+      assert.equal(
+        approvalRequests[1].toolName,
+        "execute_command"
+      );
+
+      /*
+       * edit_file succeeded.
+       */
+      assert.equal(
+        result.toolResults[0]
+          .result.success,
+        true
+      );
+
+      /*
+       * execute_command succeeded.
+       */
+      assert.equal(
+        result.toolResults[1]
+          .result.success,
+        true
+      );
+
+      assert.equal(
+        result.toolResults[1]
+          .result.output.success,
+        true
+      );
+
+      assert.equal(
+        result.toolResults[1]
+          .result.output.output.exitCode,
+        0
+      );
+
+      /*
+       * Final model response.
+       */
+      assert.equal(
+        result.response.message.content,
+        "EDIT_VERIFY_SUCCESS"
+      );
+
+      assert.equal(
+        result.telemetry.toolRounds,
+        2
+      );
+    } finally {
+      await fs.rm(
+        temporaryDirectory,
+        {
+          recursive: true,
+          force: true,
+        }
+      );
+    }
   }
 );
