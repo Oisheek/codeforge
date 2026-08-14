@@ -3287,3 +3287,574 @@ function: {
     }
   }
 );
+
+test(
+  "tracks verification after a successful write followed by execute_command",
+  async () => {
+    const temporaryDirectory =
+      await fs.mkdtemp(
+        path.join(
+          os.tmpdir(),
+          "codeforge-verification-"
+        )
+      );
+
+    const filePath =
+      path.join(
+        temporaryDirectory,
+        "sample.js"
+      );
+
+    try {
+      await fs.writeFile(
+        filePath,
+        'export const value = "bad";\n',
+        "utf8"
+      );
+
+      const tools =
+        createToolRegistry([
+          editFileTool,
+          shellTool,
+        ]);
+
+      const provider =
+        createProvider([
+          createResponse({
+            content: null,
+
+            toolCalls: [
+              {
+                id:
+                  "verification_edit_1",
+
+                type: "function",
+
+                function: {
+                  name:
+                    "edit_file",
+
+                  arguments:
+                    JSON.stringify({
+                      path:
+                        filePath,
+
+                      oldText:
+                        'export const value = "bad";',
+
+                      newText:
+                        'export const value = "good";',
+                    }),
+                },
+              },
+            ],
+          }),
+
+          createResponse({
+            content: null,
+
+            toolCalls: [
+              {
+                id:
+                  "verification_command_1",
+
+                type: "function",
+
+                function: {
+                  name:
+                    "execute_command",
+
+                  arguments:
+                    JSON.stringify({
+                      command:
+                        'node -e "const fs=require(\'fs\'); const s=fs.readFileSync(\'sample.js\',\'utf8\'); if (!s.includes(\'value = \\"good\\"\')) process.exit(1)"',
+                    }),
+                },
+              },
+            ],
+          }),
+
+          createResponse({
+            content:
+              "VERIFIED",
+          }),
+        ]);
+
+      const result =
+        await execute({
+          prompt:
+            "Fix the implementation and verify it.",
+
+          repository:
+            createRepository(),
+
+          provider,
+          tools,
+
+          project: {
+            root:
+              temporaryDirectory,
+          },
+
+          config:
+            createConfig({
+              maxAttempts: 1,
+              maxToolRounds: 5,
+            }),
+
+          requestApproval:
+            async () => true,
+        });
+
+      assert.equal(
+        result.response.message.content,
+        "VERIFIED"
+      );
+
+      assert.equal(
+        result.telemetry.verification.required,
+        true
+      );
+
+      assert.equal(
+        result.telemetry.verification.attempted,
+        true
+      );
+
+      assert.equal(
+        result.telemetry.verification.succeeded,
+        true
+      );
+    } finally {
+      await fs.rm(
+        temporaryDirectory,
+        {
+          recursive: true,
+          force: true,
+        }
+      );
+    }
+  }
+);
+
+test(
+  "does not accept a final response after a write before verification",
+  async () => {
+    const temporaryDirectory =
+      await fs.mkdtemp(
+        path.join(
+          os.tmpdir(),
+          "codeforge-premature-verification-"
+        )
+      );
+
+    const filePath =
+      path.join(
+        temporaryDirectory,
+        "sample.js"
+      );
+
+    try {
+      await fs.writeFile(
+        filePath,
+        'export const value = "bad";\n',
+        "utf8"
+      );
+
+      const tools =
+        createToolRegistry([
+          editFileTool,
+          shellTool,
+        ]);
+
+      const provider =
+        createProvider([
+          /*
+           * Round 1:
+           * The model modifies the file.
+           */
+          createResponse({
+            content: null,
+
+            toolCalls: [
+              {
+                id:
+                  "premature_edit_1",
+
+                type: "function",
+
+                function: {
+                  name:
+                    "edit_file",
+
+                  arguments:
+                    JSON.stringify({
+                      path:
+                        filePath,
+
+                      oldText:
+                        'export const value = "bad";',
+
+                      newText:
+                        'export const value = "good";',
+                    }),
+                },
+              },
+            ],
+          }),
+
+          /*
+           * Round 2:
+           * The model incorrectly tries to finish
+           * without verifying the change.
+           *
+           * The executor should NOT accept this
+           * as the final response.
+           */
+          createResponse({
+            content:
+              "PREMATURE_FINISH",
+          }),
+
+          /*
+           * Round 3:
+           * The executor should require the model
+           * to continue and the model now verifies.
+           */
+          createResponse({
+            content: null,
+
+            toolCalls: [
+              {
+                id:
+                  "premature_verify_1",
+
+                type: "function",
+
+                function: {
+                  name:
+                    "execute_command",
+
+                  arguments:
+                    JSON.stringify({
+                      command:
+                        'node -e "const fs=require(\'fs\'); const s=fs.readFileSync(\'sample.js\',\'utf8\'); if (!s.includes(\'value = \\"good\\"\')) process.exit(1)"',
+                    }),
+                },
+              },
+            ],
+          }),
+
+          /*
+           * Round 4:
+           * Final response after verification.
+           */
+          createResponse({
+            content:
+              "VERIFIED_AFTER_CONTINUATION",
+          }),
+        ]);
+
+      const result =
+        await execute({
+          prompt:
+            "Fix the implementation and verify it.",
+
+          repository:
+            createRepository(),
+
+          provider,
+          tools,
+
+          project: {
+            root:
+              temporaryDirectory,
+          },
+
+          config:
+            createConfig({
+              maxAttempts: 1,
+              maxToolRounds: 5,
+            }),
+
+          requestApproval:
+            async () => true,
+        });
+
+      /*
+       * The premature response must not be
+       * accepted as the final response.
+       */
+      assert.equal(
+        result.response.message.content,
+        "VERIFIED_AFTER_CONTINUATION"
+      );
+
+      /*
+       * Four model calls:
+       *
+       * 1. edit
+       * 2. premature final response
+       * 3. verification command
+       * 4. final response
+       */
+      assert.equal(
+        provider.calls.length,
+        4
+      );
+
+      assert.equal(
+        result.telemetry.verification.required,
+        true
+      );
+
+      assert.equal(
+        result.telemetry.verification.attempted,
+        true
+      );
+
+      assert.equal(
+        result.telemetry.verification.succeeded,
+        true
+      );
+    } finally {
+      await fs.rm(
+        temporaryDirectory,
+        {
+          recursive: true,
+          force: true,
+        }
+      );
+    }
+  }
+);
+
+test(
+  "tracks failed verification and successful repair verification",
+  async () => {
+    const temporaryDirectory =
+      await fs.mkdtemp(
+        path.join(
+          os.tmpdir(),
+          "codeforge-repair-verification-"
+        )
+      );
+
+    const filePath =
+      path.join(
+        temporaryDirectory,
+        "sample.js"
+      );
+
+    try {
+      await fs.writeFile(
+        filePath,
+        'export const value = "bad";\n',
+        "utf8"
+      );
+
+      const tools =
+        createToolRegistry([
+          editFileTool,
+          shellTool,
+        ]);
+
+      const provider =
+        createProvider([
+          /*
+           * Round 1:
+           * Make an incorrect repair.
+           */
+          createResponse({
+            content: null,
+
+            toolCalls: [
+              {
+                id:
+                  "repair_edit_1",
+
+                type: "function",
+
+                function: {
+                  name:
+                    "edit_file",
+
+                  arguments:
+                    JSON.stringify({
+                      path:
+                        filePath,
+
+                      oldText:
+                        'export const value = "bad";',
+
+                      newText:
+                        'export const value = "still-bad";',
+                    }),
+                },
+              },
+            ],
+          }),
+
+          /*
+           * Round 2:
+           * Verification fails because the expected
+           * corrected value is not present.
+           */
+          createResponse({
+            content: null,
+
+            toolCalls: [
+              {
+                id:
+                  "repair_verify_1",
+
+                type: "function",
+
+                function: {
+                  name:
+                    "execute_command",
+
+                  arguments:
+                    JSON.stringify({
+                      command:
+                        `node -e "const fs=require('fs'); const s=fs.readFileSync('${filePath.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}', 'utf8'); if (!s.includes('value = \\"good\\"')) process.exit(1)"`,
+                    }),
+                },
+              },
+            ],
+          }),
+
+          /*
+           * Round 3:
+           * Repair the incorrect change.
+           */
+          createResponse({
+            content: null,
+
+            toolCalls: [
+              {
+                id:
+                  "repair_edit_2",
+
+                type: "function",
+
+                function: {
+                  name:
+                    "edit_file",
+
+                  arguments:
+                    JSON.stringify({
+                      path:
+                        filePath,
+
+                      oldText:
+                        'export const value = "still-bad";',
+
+                      newText:
+                        'export const value = "good";',
+                    }),
+                },
+              },
+            ],
+          }),
+
+          /*
+           * Round 4:
+           * Verification succeeds.
+           */
+          createResponse({
+            content: null,
+
+            toolCalls: [
+              {
+                id:
+                  "repair_verify_2",
+
+                type: "function",
+
+                function: {
+                  name:
+                    "execute_command",
+
+                  arguments:
+                    JSON.stringify({
+                      command:
+                        `node -e "const fs=require('fs'); const s=fs.readFileSync('${filePath.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}', 'utf8'); if (!s.includes('value = \\"good\\"')) process.exit(1)"`,
+                    }),
+                  },
+                },
+            ],
+          }),
+
+          /*
+           * Round 5:
+           * Final response after successful repair
+           * verification.
+           */
+          createResponse({
+            content:
+              "REPAIR_VERIFIED",
+          }),
+        ]);
+
+      const result =
+        await execute({
+          prompt:
+            "Fix the implementation and verify it.",
+
+          repository:
+            createRepository(),
+
+          provider,
+          tools,
+
+          project: {
+            root:
+              temporaryDirectory,
+          },
+
+          config:
+            createConfig({
+              maxAttempts: 1,
+              maxToolRounds: 6,
+            }),
+
+          requestApproval:
+            async () => true,
+        });
+
+      assert.equal(
+        result.response.message.content,
+        "REPAIR_VERIFIED"
+      );
+
+      assert.equal(
+        result.telemetry.verification.required,
+        true
+      );
+
+      assert.equal(
+        result.telemetry.verification.attempted,
+        true
+      );
+
+      assert.equal(
+        result.telemetry.verification.succeeded,
+        true
+      );
+
+      assert.equal(
+        result.telemetry.toolRounds,
+        4
+      );
+    } finally {
+      await fs.rm(
+        temporaryDirectory,
+        {
+          recursive: true,
+          force: true,
+        }
+      );
+    }
+  }
+);

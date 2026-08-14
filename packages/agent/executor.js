@@ -1125,6 +1125,17 @@ export async function execute({
       : configuredMaxToolRounds;
   const maxToolProtocolErrors = 2;
 
+const verification = {
+  required:
+    effectivePlan.requiresWrite === true,
+
+  attempted: false,
+
+  succeeded: false,
+
+  writeSinceLastVerification: false,
+};
+
   const messages = [];
 
   if (context.system) {
@@ -1247,9 +1258,42 @@ export async function execute({
             : [];
 
         // Model produced a normal final response.
-        if (responseToolCalls.length === 0) {
-          break;
-        }
+if (responseToolCalls.length === 0) {
+  if (
+    verification.required &&
+    verification.writeSinceLastVerification &&
+    !verification.attempted
+  ) {
+    messages.push({
+      role: "user",
+      content: [
+        "Verification is required before completing this coding task.",
+        "A project change was made, but no verification command has been executed yet.",
+        "Use execute_command to run an appropriate verification command.",
+        "Do not provide the final answer until verification has been attempted.",
+      ].join("\n"),
+    });
+
+    emit({
+      type: "stage:error",
+      stage: "verification",
+      detail:
+        "Model attempted to finish before verification.",
+      data: {
+        required:
+          verification.required,
+        attempted:
+          verification.attempted,
+        succeeded:
+          verification.succeeded,
+      },
+    });
+
+    continue;
+  }
+
+  break;
+}
 
         if (toolRound >= maxToolRounds) {
           const error =
@@ -1373,6 +1417,33 @@ export async function execute({
           });
         }
 
+        for (const toolResult of roundResults) {
+  if (
+    toolResult.result?.success &&
+    (
+      toolResult.name === "edit_file" ||
+      toolResult.name === "write_file"
+    )
+  ) {
+    verification.writeSinceLastVerification =
+      true;
+  }
+
+  if (
+    toolResult.name === "execute_command" &&
+    verification.required &&
+    verification.writeSinceLastVerification
+  ) {
+    verification.attempted = true;
+
+    verification.succeeded =
+      toolResult.result?.success === true;
+
+    verification.writeSinceLastVerification =
+      false;
+  }
+}
+
         toolResults.push(
           ...roundResults
         );
@@ -1482,14 +1553,24 @@ export async function execute({
         context,
         response,
         toolResults,
-        telemetry: {
-          attempts: currentAttempt,
-          toolRounds: toolRound,
-          retrievalCount,
-          retrievedFiles,
-          retrievedContext,
-          usage,
-        },
+       telemetry: {
+  attempts: currentAttempt,
+  toolRounds: toolRound,
+  retrievalCount,
+  retrievedFiles,
+  retrievedContext,
+  usage,
+  verification: {
+    required:
+      verification.required,
+
+    attempted:
+      verification.attempted,
+
+    succeeded:
+      verification.succeeded,
+  },
+},
       };
     } catch (error) {
       emit({
