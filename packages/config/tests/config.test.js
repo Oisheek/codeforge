@@ -16,12 +16,12 @@ test("loads selector defaults", () => {
 
   assert.equal(
     config.selectors.rag,
-    "google/gemma-4-31b-it:free"
+    "inclusionai/ling-3.0-flash:free"
   );
 
   assert.equal(
     config.selectors.model,
-    "google/gemma-4-31b-it:free"
+"inclusionai/ling-3.0-flash:free"
   );
 
   assert.equal(

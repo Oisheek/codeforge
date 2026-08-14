@@ -6,13 +6,13 @@ import { defaultConfig } from "../defaults.js";
 test("defines model selector defaults", () => {
   assert.deepEqual(
     defaultConfig.selectors,
-    {
-      provider: "openrouter",
-      rag: "google/gemma-4-31b-it:free",
-      model: "google/gemma-4-31b-it:free",
-      maxTokens: 128,
-      modelMaxTokens: 256,
-    }
+   {
+  provider: "openrouter",
+  rag: "inclusionai/ling-3.0-flash:free",
+  model: "inclusionai/ling-3.0-flash:free",
+  maxTokens: 128,
+  modelMaxTokens: 256,
+}
   );
 });
 

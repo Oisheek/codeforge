@@ -3858,3 +3858,219 @@ test(
     }
   }
 );
+test(
+  "executes a complete debug repair workflow",
+  async () => {
+    const temporaryDirectory =
+      await fs.mkdtemp(
+        path.join(
+          os.tmpdir(),
+          "codeforge-e2e-debug-"
+        )
+      );
+
+    const filePath =
+      path.join(
+        temporaryDirectory,
+        "calculator.js"
+      );
+
+    try {
+      await fs.writeFile(
+        filePath,
+        [
+          "export function add(a, b) {",
+          "  return a - b;",
+          "}",
+          "",
+        ].join("\n"),
+        "utf8"
+      );
+
+      const tools =
+        createToolRegistry([
+          readFileTool,
+          editFileTool,
+          shellTool,
+        ]);
+
+      const provider =
+        createProvider([
+          /*
+           * Round 1:
+           * Inspect the implementation.
+           */
+          createResponse({
+            content: null,
+
+            toolCalls: [
+              {
+                id:
+                  "e2e_read_1",
+
+                type: "function",
+
+                function: {
+                  name:
+                    "read_file",
+
+                  arguments:
+                    JSON.stringify({
+                      path:
+                        "calculator.js",
+                    }),
+                },
+              },
+            ],
+          }),
+
+          /*
+           * Round 2:
+           * Correct the implementation.
+           */
+          createResponse({
+            content: null,
+
+            toolCalls: [
+              {
+                id:
+                  "e2e_edit_1",
+
+                type: "function",
+
+                function: {
+                  name:
+                    "edit_file",
+
+                  arguments:
+                    JSON.stringify({
+                      path:
+                        "calculator.js",
+
+                      oldText:
+                        "  return a - b;",
+
+                      newText:
+                        "  return a + b;",
+                    }),
+                },
+              },
+            ],
+          }),
+
+          /*
+           * Round 3:
+           * Verify the implementation.
+           */
+          createResponse({
+            content: null,
+
+            toolCalls: [
+              {
+                id:
+                  "e2e_verify_1",
+
+                type: "function",
+
+                function: {
+                  name:
+                    "execute_command",
+
+                  arguments:
+                    JSON.stringify({
+                      command:
+                        'node -e "import(\'./calculator.js\').then(m => { if (m.add(2, 3) !== 5) process.exit(1); })"',
+                    }),
+                },
+              },
+            ],
+          }),
+
+          /*
+           * Round 4:
+           * Final response after verification.
+           */
+          createResponse({
+            content:
+              "CODING_WORKFLOW_VERIFIED",
+          }),
+        ]);
+
+      const result =
+        await execute({
+          prompt:
+            "Fix the failing implementation and run the tests.",
+
+          repository:
+            createRepository(),
+
+          provider,
+
+          tools,
+
+          project: {
+            root:
+              temporaryDirectory,
+          },
+
+          config:
+            createConfig({
+              maxAttempts: 1,
+              maxToolRounds: 6,
+            }),
+
+          requestApproval:
+            async () => true,
+        });
+
+      assert.equal(
+        result.response.message.content,
+        "CODING_WORKFLOW_VERIFIED"
+      );
+
+      assert.equal(
+        provider.calls.length,
+        4
+      );
+
+      assert.equal(
+        result.telemetry.verification.required,
+        true
+      );
+
+      assert.equal(
+        result.telemetry.verification.attempted,
+        true
+      );
+
+      assert.equal(
+        result.telemetry.verification.succeeded,
+        true
+      );
+
+      assert.equal(
+        result.telemetry.toolRounds,
+        3
+      );
+
+      const finalSource =
+        await fs.readFile(
+          filePath,
+          "utf8"
+        );
+
+      assert.match(
+        finalSource,
+        /return a \+ b;/
+      );
+    } finally {
+      await fs.rm(
+        temporaryDirectory,
+        {
+          recursive: true,
+          force: true,
+        }
+      );
+    }
+  }
+);
