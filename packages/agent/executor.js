@@ -1258,6 +1258,7 @@ const verification = {
             : [];
 
         // Model produced a normal final response.
+// Model produced a normal final response.
 if (responseToolCalls.length === 0) {
   if (
     verification.required &&
@@ -1270,6 +1271,8 @@ if (responseToolCalls.length === 0) {
         "Verification is required before completing this coding task.",
         "A project change was made, but no verification command has been executed yet.",
         "Use execute_command to run an appropriate verification command.",
+        "Choose the verification command from the actual project context and available project tooling.",
+        "Do not invent imports, exports, APIs, commands, or interfaces solely for verification.",
         "Do not provide the final answer until verification has been attempted.",
       ].join("\n"),
     });
@@ -1279,6 +1282,41 @@ if (responseToolCalls.length === 0) {
       stage: "verification",
       detail:
         "Model attempted to finish before verification.",
+      data: {
+        required:
+          verification.required,
+        attempted:
+          verification.attempted,
+        succeeded:
+          verification.succeeded,
+      },
+    });
+
+    continue;
+  }
+
+  if (
+    verification.required &&
+    verification.attempted &&
+    !verification.succeeded
+  ) {
+    messages.push({
+      role: "user",
+      content: [
+        "The verification command failed.",
+        "Do not provide the final answer yet.",
+        "Use the verification failure output already provided in the tool result to diagnose the requested change.",
+        "Only modify the implementation if the failure is relevant to the requested change.",
+        "After making a relevant correction, run execute_command again to verify the change.",
+        "Do not invent imports, exports, APIs, commands, or interfaces solely to make verification pass.",
+      ].join("\n"),
+    });
+
+    emit({
+      type: "stage:error",
+      stage: "verification",
+      detail:
+        "Verification failed; model must diagnose and repair before completing.",
       data: {
         required:
           verification.required,
@@ -1436,11 +1474,11 @@ if (responseToolCalls.length === 0) {
   ) {
     verification.attempted = true;
 
-    verification.succeeded =
-      toolResult.result?.success === true;
+verification.succeeded =
+  toolResult.result?.success === true;
 
-    verification.writeSinceLastVerification =
-      false;
+verification.writeSinceLastVerification =
+  !verification.succeeded;
   }
 }
 
