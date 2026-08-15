@@ -267,9 +267,7 @@ function activeLine(
   state,
   frameIndex
 ) {
-  if (
-    !state.activeStage
-  ) {
+  if (!state.activeStage) {
     return null;
   }
 
@@ -284,20 +282,18 @@ function activeLine(
   const elapsed =
     colors.muted(
       formatDuration(
-        getActiveElapsed(
-          state
-        )
+        getActiveElapsed(state)
       )
     );
 
+  const label =
+    state.activeLabel ||
+    "Working";
+
   return safeLine(
-    `  ${spinner} ${colors.bold(
-      state.activeLabel ||
-        "Working"
-    )} ${elapsed}`
+    `  ${spinner} ${colors.bold(label)} ${elapsed}`
   );
 }
-
 function repositoryLine(
   state
 ) {
@@ -327,7 +323,7 @@ function repositoryLine(
 
   return safeLine(
     `  ${colors.muted(
-      "Context"
+      "Repository"
     )}  ${firstPath}${extra}`
   );
 }
@@ -362,12 +358,12 @@ function contextLine(
   }
 
   return safeLine(
-    `  ${colors.muted(
-      "Tokens"
-    )}   ~${formatNumber(
-      total
-    )} context`
-  );
+  `  ${colors.muted(
+    "Context"
+  )}     ~${formatNumber(
+    total
+  )} tokens`
+);
 }
 
 function modelLine(
@@ -488,14 +484,22 @@ function buildLines(
   const lines = [];
 
   lines.push(
-    colors.bold(
-      `${colors.primary(
-        "✦"
-      )} CodeForge`
-    )
-  );
+  safeLine(
+    `${colors.bold(
+      colors.primary("✦ CodeForge")
+    )} ${colors.muted("· Agent Activity")}`
+  )
+);
 
-  lines.push("");
+lines.push(
+  safeLine(
+    `${colors.muted("─".repeat(
+      Math.min(terminalWidth() - 1, 64)
+    ))}`
+  )
+);
+
+lines.push("");
 
   const completed =
     state.completedStages
@@ -699,11 +703,11 @@ function finalContextLines(
       {};
 
     const round =
-      Number.isFinite(
-        metric?.round
-      )
-        ? metric.round
-        : 0;
+  Number.isFinite(
+    metric?.toolRound
+  )
+    ? metric.toolRound
+    : 0;
 
     lines.push(
       `Round ${round}`
@@ -859,13 +863,12 @@ function finalModelLines(
   }
 
   if (
-    usage.finishReason
-  ) {
-    lines.push(
-      `Finish       ${usage.finishReason}`
-    );
-  }
-
+  state.finishReason
+) {
+  lines.push(
+    `Finish       ${state.finishReason}`
+  );
+}
   return lines;
 }
 
@@ -911,10 +914,65 @@ function printFinalSummary(
 
   if (state.failed) {
     console.log(
-      `${colors.error(
-        "!"
+      safeLine(
+        `${colors.error(
+          "✕"
+        )} ${colors.bold(
+          colors.error(
+            "CodeForge failed"
+          )
+        )}${
+          Number.isFinite(
+            elapsed
+          )
+            ? colors.muted(
+                ` · ${formatDuration(
+                  elapsed
+                )}`
+              )
+            : ""
+        }`
+      )
+    );
+
+    if (state.lastError) {
+      console.log(
+        safeLine(
+          `  ${colors.muted(
+            state.lastError
+          )}`
+        )
+      );
+    }
+
+    return;
+  }
+
+  const stageLines =
+    finalStageLines(
+      state
+    );
+
+  for (
+    const line of stageLines
+  ) {
+    console.log(line);
+  }
+
+  if (
+    stageLines.length > 0
+  ) {
+    console.log("");
+  }
+
+  console.log(
+    safeLine(
+      `${colors.success(
+        "✓"
       )} ${colors.bold(
-        "CodeForge failed"
+        colors.primary(
+          "CodeForge completed"
+        )
       )}${
         Number.isFinite(
           elapsed
@@ -926,46 +984,18 @@ function printFinalSummary(
             )
           : ""
       }`
-    );
-
-    return;
-  }
-const stageLines =
-  finalStageLines(
-    state
+    )
   );
 
-for (
-  const line of stageLines
-) {
-  console.log(line);
-}
-
-if (
-  stageLines.length > 0
-) {
-  console.log("");
-}
-
-console.log(
-  `${colors.success(
-    "✓"
-  )} ${colors.bold(
-    "Completed"
-  )}${
-    Number.isFinite(
-      elapsed
+  console.log(
+    safeLine(
+      colors.muted(
+        "  Execution finished successfully."
+      )
     )
-      ? colors.muted(
-          ` · ${formatDuration(
-            elapsed
-          )}`
-        )
-      : ""
-  }`
-);
+  );
 
-const sections = [
+  const sections = [
     finalRepositoryLines(
       state
     ),

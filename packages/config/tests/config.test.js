@@ -16,12 +16,12 @@ test("loads selector defaults", () => {
 
   assert.equal(
     config.selectors.rag,
-    "inclusionai/ling-3.0-flash:free"
+    "nvidia/nemotron-3-super-120b-a12b:free"
   );
 
   assert.equal(
     config.selectors.model,
-"inclusionai/ling-3.0-flash:free"
+    "nvidia/nemotron-3-super-120b-a12b:free"
   );
 
   assert.equal(

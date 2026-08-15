@@ -3,10 +3,10 @@ export const defaultConfig = {
 
   models: {
   fast:
-    "inclusionai/ling-3.0-flash:free",
+    "nvidia/nemotron-3-super-120b-a12b:free",
 
   general:
-    "inclusionai/ling-3.0-flash:free",
+    "nvidia/nemotron-3-super-120b-a12b:free",
 
   coding:
     "cohere/north-mini-code:free",
@@ -42,9 +42,9 @@ export const defaultConfig = {
 selectors: {
   provider: "openrouter",
 
-  rag: "inclusionai/ling-3.0-flash:free",
+  rag: "nvidia/nemotron-3-super-120b-a12b:free",
 
-  model: "inclusionai/ling-3.0-flash:free",
+  model: "nvidia/nemotron-3-super-120b-a12b:free",
 
   maxTokens: 128,
 

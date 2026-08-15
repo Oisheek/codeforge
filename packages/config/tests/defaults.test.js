@@ -8,8 +8,8 @@ test("defines model selector defaults", () => {
     defaultConfig.selectors,
    {
   provider: "openrouter",
-  rag: "inclusionai/ling-3.0-flash:free",
-  model: "inclusionai/ling-3.0-flash:free",
+  rag: "nvidia/nemotron-3-super-120b-a12b:free",
+  model: "nvidia/nemotron-3-super-120b-a12b:free",
   maxTokens: 128,
   modelMaxTokens: 256,
 }

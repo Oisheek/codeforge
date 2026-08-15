@@ -14,17 +14,25 @@ async function requestToolApproval(
   } = request;
 
   logger.plain("");
+  logger.line();
+
   logger.warn(
-    `Approval required: ${toolName}`
+    `Approval required`
   );
-if (
-  toolName === "execute_command" &&
-  typeof args.command === "string"
-) {
+
   logger.plain(
-    `Command: ${args.command}`
+    `Tool: ${toolName}`
   );
-}
+
+  if (
+    toolName === "execute_command" &&
+    typeof args.command === "string"
+  ) {
+    logger.plain(
+      `Command: ${args.command}`
+    );
+  }
+
   if (args.path) {
     logger.plain(
       `Path: ${args.path}`
@@ -43,9 +51,11 @@ if (
     );
   }
 
+  logger.line();
+
   return new Promise((resolve) => {
     prompt.question(
-      "Approve this operation? [y/N] ",
+      "Approve? [y/N] ",
       (answer) => {
         const normalized =
           answer
@@ -55,6 +65,12 @@ if (
         const approved =
           normalized === "y" ||
           normalized === "yes";
+
+        logger.plain(
+          approved
+            ? "Approved."
+            : "Denied."
+        );
 
         logger.plain("");
 
@@ -112,7 +128,9 @@ export function startCLI(app) {
     }
 
     try {
-      const result = await execute({
+  prompt.pause();
+
+  const result = await execute({
         prompt: command,
         repository,
         provider,
@@ -151,12 +169,13 @@ export function startCLI(app) {
         result.response.message?.content ?? "No response."
       );
       logger.plain("");
-    } catch (error) {
+        } catch (error) {
       dashboard.finish();
       logger.error(error.message);
+    } finally {
+      prompt.resume();
+      prompt.prompt();
     }
-
-    prompt.prompt();
   });
 
   prompt.on("close", () => {

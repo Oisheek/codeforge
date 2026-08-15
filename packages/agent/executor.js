@@ -427,6 +427,7 @@ async function executeResolvedToolCalls({
   toolCalls,
   registry,
   projectRoot,
+  approvedTools = new Set(),
   allowedCapabilities,
   requestApproval = null,
   toolCallHistory = null,
@@ -554,18 +555,29 @@ async function executeResolvedToolCalls({
         toolCallId: call.id,
       },
     });
+const approvalKey =
+  createToolCallFingerprint(
+    call.name,
+    call.arguments
+  );
+
+const previouslyApproved =
+  approvedTools.has(approvalKey);
     let result =
-      await executeAuthorizedTool(
-        call.tool,
-        call.arguments,
-        {
-          projectRoot,
-        },
-        {
-          allowedCapabilities,
-          approval: null,
-        }
-      );
+  await executeAuthorizedTool(
+    call.tool,
+    call.arguments,
+    {
+      projectRoot,
+    },
+    {
+      allowedCapabilities,
+      approval:
+        previouslyApproved
+          ? "approved"
+          : null,
+    }
+  );
 
     if (
       !result.success &&
@@ -597,20 +609,21 @@ async function executeResolvedToolCalls({
             null,
         });
 
-      if (approved === true) {
-        result =
-          await executeAuthorizedTool(
-            call.tool,
-            call.arguments,
-            {
-              projectRoot,
-            },
-            {
-              allowedCapabilities,
-              approval: "approved",
-            }
-          );
+  if (approved === true) {
+approvedTools.add(approvalKey);
+  result =
+    await executeAuthorizedTool(
+      call.tool,
+      call.arguments,
+      {
+        projectRoot,
+      },
+      {
+        allowedCapabilities,
+        approval: "approved",
       }
+    );
+}
 
       else {
         result = {
@@ -757,7 +770,7 @@ export async function execute({
   };
   const availableTools =
     getAvailableTools(tools);
-
+  const approvedTools = new Set();
   emit({
     type: "run:start",
     stage: "run",
@@ -1125,16 +1138,16 @@ export async function execute({
       : configuredMaxToolRounds;
   const maxToolProtocolErrors = 2;
 
-const verification = {
-  required:
-    effectivePlan.requiresWrite === true,
+  const verification = {
+    required:
+      effectivePlan.requiresWrite === true,
 
-  attempted: false,
+    attempted: false,
 
-  succeeded: false,
+    succeeded: false,
 
-  writeSinceLastVerification: false,
-};
+    writeSinceLastVerification: false,
+  };
 
   const messages = [];
 
@@ -1185,21 +1198,21 @@ const verification = {
         new Map();
 
       const toolBudget = {
-  search_files: {
-    used: 0,
-    max: 2,
-  },
+        search_files: {
+          used: 0,
+          max: 2,
+        },
 
-  read_file: {
-    used: 0,
-    max: 6,
-  },
+        read_file: {
+          used: 0,
+          max: 6,
+        },
 
-  execute_command: {
-    used: 0,
-    max: 3,
-  },
-};
+        execute_command: {
+          used: 0,
+          max: 3,
+        },
+      };
 
       while (true) {
         const contextMetrics =
@@ -1258,80 +1271,80 @@ const verification = {
             : [];
 
         // Model produced a normal final response.
-// Model produced a normal final response.
-if (responseToolCalls.length === 0) {
-  if (
-    verification.required &&
-    verification.writeSinceLastVerification &&
-    !verification.attempted
-  ) {
-    messages.push({
-      role: "user",
-      content: [
-        "Verification is required before completing this coding task.",
-        "A project change was made, but no verification command has been executed yet.",
-        "Use execute_command to run an appropriate verification command.",
-        "Choose the verification command from the actual project context and available project tooling.",
-        "Do not invent imports, exports, APIs, commands, or interfaces solely for verification.",
-        "Do not provide the final answer until verification has been attempted.",
-      ].join("\n"),
-    });
+        // Model produced a normal final response.
+        if (responseToolCalls.length === 0) {
+          if (
+            verification.required &&
+            verification.writeSinceLastVerification &&
+            !verification.attempted
+          ) {
+            messages.push({
+              role: "user",
+              content: [
+                "Verification is required before completing this coding task.",
+                "A project change was made, but no verification command has been executed yet.",
+                "Use execute_command to run an appropriate verification command.",
+                "Choose the verification command from the actual project context and available project tooling.",
+                "Do not invent imports, exports, APIs, commands, or interfaces solely for verification.",
+                "Do not provide the final answer until verification has been attempted.",
+              ].join("\n"),
+            });
 
-    emit({
-      type: "stage:error",
-      stage: "verification",
-      detail:
-        "Model attempted to finish before verification.",
-      data: {
-        required:
-          verification.required,
-        attempted:
-          verification.attempted,
-        succeeded:
-          verification.succeeded,
-      },
-    });
+            emit({
+              type: "stage:error",
+              stage: "verification",
+              detail:
+                "Model attempted to finish before verification.",
+              data: {
+                required:
+                  verification.required,
+                attempted:
+                  verification.attempted,
+                succeeded:
+                  verification.succeeded,
+              },
+            });
 
-    continue;
-  }
+            continue;
+          }
 
-  if (
-    verification.required &&
-    verification.attempted &&
-    !verification.succeeded
-  ) {
-    messages.push({
-      role: "user",
-      content: [
-        "The verification command failed.",
-        "Do not provide the final answer yet.",
-        "Use the verification failure output already provided in the tool result to diagnose the requested change.",
-        "Only modify the implementation if the failure is relevant to the requested change.",
-        "After making a relevant correction, run execute_command again to verify the change.",
-        "Do not invent imports, exports, APIs, commands, or interfaces solely to make verification pass.",
-      ].join("\n"),
-    });
+          if (
+            verification.required &&
+            verification.attempted &&
+            !verification.succeeded
+          ) {
+            messages.push({
+              role: "user",
+              content: [
+                "The verification command failed.",
+                "Do not provide the final answer yet.",
+                "Use the verification failure output already provided in the tool result to diagnose the requested change.",
+                "Only modify the implementation if the failure is relevant to the requested change.",
+                "After making a relevant correction, run execute_command again to verify the change.",
+                "Do not invent imports, exports, APIs, commands, or interfaces solely to make verification pass.",
+              ].join("\n"),
+            });
 
-    emit({
-      type: "stage:error",
-      stage: "verification",
-      detail:
-        "Verification failed; model must diagnose and repair before completing.",
-      data: {
-        required:
-          verification.required,
-        attempted:
-          verification.attempted,
-        succeeded:
-          verification.succeeded,
-      },
-    });
+            emit({
+              type: "stage:error",
+              stage: "verification",
+              detail:
+                "Verification failed; model must diagnose and repair before completing.",
+              data: {
+                required:
+                  verification.required,
+                attempted:
+                  verification.attempted,
+                succeeded:
+                  verification.succeeded,
+              },
+            });
 
-    continue;
-  }
+            continue;
+          }
 
-  break;
-}
+          break;
+        }
 
         if (toolRound >= maxToolRounds) {
           const error =
@@ -1371,6 +1384,8 @@ if (responseToolCalls.length === 0) {
 
               projectRoot:
                 project.root,
+
+              approvedTools,
 
               allowedCapabilities: [
                 "filesystem.read",
@@ -1456,31 +1471,31 @@ if (responseToolCalls.length === 0) {
         }
 
         for (const toolResult of roundResults) {
-  if (
-    toolResult.result?.success &&
-    (
-      toolResult.name === "edit_file" ||
-      toolResult.name === "write_file"
-    )
-  ) {
-    verification.writeSinceLastVerification =
-      true;
-  }
+          if (
+            toolResult.result?.success &&
+            (
+              toolResult.name === "edit_file" ||
+              toolResult.name === "write_file"
+            )
+          ) {
+            verification.writeSinceLastVerification =
+              true;
+          }
 
-  if (
-    toolResult.name === "execute_command" &&
-    verification.required &&
-    verification.writeSinceLastVerification
-  ) {
-    verification.attempted = true;
+          if (
+            toolResult.name === "execute_command" &&
+            verification.required &&
+            verification.writeSinceLastVerification
+          ) {
+            verification.attempted = true;
 
-verification.succeeded =
-  toolResult.result?.success === true;
+            verification.succeeded =
+              toolResult.result?.success === true;
 
-verification.writeSinceLastVerification =
-  !verification.succeeded;
-  }
-}
+            verification.writeSinceLastVerification =
+              !verification.succeeded;
+          }
+        }
 
         toolResults.push(
           ...roundResults
@@ -1591,24 +1606,24 @@ verification.writeSinceLastVerification =
         context,
         response,
         toolResults,
-       telemetry: {
-  attempts: currentAttempt,
-  toolRounds: toolRound,
-  retrievalCount,
-  retrievedFiles,
-  retrievedContext,
-  usage,
-  verification: {
-    required:
-      verification.required,
+        telemetry: {
+          attempts: currentAttempt,
+          toolRounds: toolRound,
+          retrievalCount,
+          retrievedFiles,
+          retrievedContext,
+          usage,
+          verification: {
+            required:
+              verification.required,
 
-    attempted:
-      verification.attempted,
+            attempted:
+              verification.attempted,
 
-    succeeded:
-      verification.succeeded,
-  },
-},
+            succeeded:
+              verification.succeeded,
+          },
+        },
       };
     } catch (error) {
       emit({

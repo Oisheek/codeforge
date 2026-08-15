@@ -1,7 +1,9 @@
 import { colors } from "./colors.js";
 
 function print(symbol, color, message = "") {
-  console.log(color(`${symbol} ${String(message)}`));
+  console.log(
+    color(`${symbol} ${String(message)}`)
+  );
 }
 
 export const logger = {
@@ -20,11 +22,13 @@ export const logger = {
   error(message) {
     print("✖", colors.error, message);
   },
+
   debug(message) {
-  if (process.env.DEBUG === "true") {
-    print("🐞", colors.secondary, message);
-  }
-},
+    if (process.env.DEBUG === "true") {
+      print("•", colors.secondary, message);
+    }
+  },
+
   plain(message) {
     console.log(colors.text(message));
   },
@@ -32,7 +36,7 @@ export const logger = {
   line() {
     console.log(
       colors.muted(
-        "────────────────────────────────────────────────────────────"
+        "────────────────────────────────────────────────────────────────"
       )
     );
   },
