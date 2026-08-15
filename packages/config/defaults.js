@@ -1,4 +1,5 @@
 export const defaultConfig = {
+  configVersion: 2,
   provider: "openrouter",
 
   models: {

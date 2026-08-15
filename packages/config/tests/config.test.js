@@ -4,8 +4,10 @@ import assert from "node:assert/strict";
 import {
   loadConfig,
   validateConfig,
+  migrateConfig,
 } from "../config.js";
 
+import { defaultConfig } from "../defaults.js";
 test("loads selector defaults", () => {
   const config = loadConfig();
 
@@ -207,4 +209,56 @@ test("rejects invalid runtime token limits", () => {
     () => validateConfig(config),
     /maxTokens must be a positive number/
   );
+});
+
+test("migrates an unversioned legacy config to current defaults", () => {
+  const legacyConfig = {
+    provider: "openrouter",
+    models: {
+      fast: "nvidia/nemotron-3-super-120b-a12b:free",
+      general: "nvidia/nemotron-3-super-120b-a12b:free",
+      fallback: "cohere/north-mini-code:free",
+    },
+    selectors: {
+      provider: "openrouter",
+      rag: "nvidia/nemotron-3-super-120b-a12b:free",
+      model: "nvidia/nemotron-3-super-120b-a12b:free",
+      maxTokens: 128,
+      modelMaxTokens: 256,
+    },
+  };
+
+  const migrated = migrateConfig(legacyConfig);
+
+  assert.equal(
+    migrated.config.configVersion,
+    2
+  );
+
+  assert.equal(
+    migrated.config.models.fast,
+    defaultConfig.models.fast
+  );
+
+  assert.equal(
+    migrated.config.models.general,
+    defaultConfig.models.general
+  );
+
+  assert.equal(
+    migrated.config.models.fallback,
+    defaultConfig.models.fallback
+  );
+
+  assert.equal(
+    migrated.config.selectors.rag,
+    defaultConfig.selectors.rag
+  );
+
+  assert.equal(
+    migrated.config.selectors.model,
+    defaultConfig.selectors.model
+  );
+
+  assert.equal(migrated.migrated, true);
 });
