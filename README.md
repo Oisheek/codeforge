@@ -72,8 +72,6 @@ export OPENROUTER_API_KEY="your_api_key_here"
 
 You can also configure the key through an environment file when running CodeForge locally.
 
-> Never commit your API key to GitHub or publish it to npm.
-
 ---
 
 ## Installation
