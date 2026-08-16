@@ -442,7 +442,7 @@ A typical workflow is:
 Understand
     |
     v
-Plan
+  Plan
     |
     v
 Retrieve Context
