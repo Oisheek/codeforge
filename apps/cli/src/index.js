@@ -1,17 +1,20 @@
 #!/usr/bin/env node
 
+import packageJson from "../../../package.json" with { type: "json" };
 import { bootstrap } from "./bootstrap.js";
+
+const VERSION = packageJson.version;
 
 const args = process.argv.slice(2);
 
 if (args.includes("--version") || args.includes("-v")) {
-  console.log("CodeForge AI v1.0.0");
+  console.log(`CodeForge AI v${VERSION}`);
   process.exit(0);
 }
 
 if (args.includes("--help") || args.includes("-h")) {
   console.log(`
-CodeForge AI v1.0.0
+CodeForge AI v${VERSION}
 Terminal-native AI Software Engineering Agent
 
 Usage:
