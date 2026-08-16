@@ -93,7 +93,7 @@ codeforge --version
 Expected output:
 
 ```text
-CodeForge AI v1.0.2
+CodeForge AI v1.0.3
 ```
 
 Once installed, the `codeforge` command is available globally.
@@ -572,7 +572,7 @@ A normal CodeForge session looks like:
 ```text
 $ codeforge
 
-CodeForge AI v1.0.2
+CodeForge AI v1.0.3
 Terminal-Native AI Software Engineering Agent
 ────────────────────────────────────────────────────────────
 
@@ -823,7 +823,7 @@ node --test
 ## Package Information
 
 - **Current npm package:** `@oisheek_c/codeforge`
-- **Current release:** `1.0.2`
+- **Current release:** `1.0.3`
 - **CLI command:** `codeforge`
 - **Required Node.js version:** `>= 22.13.0`
 
@@ -951,7 +951,7 @@ At a high level:
 
 ## Current Release
 
-**v1.0.2**
+**v1.0.3**
 
 The current release includes:
 
@@ -1047,7 +1047,7 @@ npm list -g --depth=0
 You should see:
 
 ```text
-@oisheek_c/codeforge@1.0.2
+@oisheek_c/codeforge@1.0.3
 ```
 
 Check the npm global prefix:
@@ -1067,7 +1067,7 @@ codeforge --version
 Expected:
 
 ```text
-CodeForge AI v1.0.2
+CodeForge AI v1.0.3
 ```
 
 ### OpenRouter authentication failure
